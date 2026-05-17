@@ -1,3 +1,4 @@
+import structlog
 from fastapi import APIRouter
 
 from backend.api.v1.endpoints.anomalies import router as anomalies_router
@@ -12,12 +13,11 @@ from backend.api.v1.endpoints.ml import router as ml_router
 from backend.api.v1.endpoints.transformers import router as transformers_router
 from backend.api.v1.endpoints.users import router as users_router
 
-from backend.api.v1 import fv_detection
-from backend.api.v1 import validation
-from backend.api.v1 import dashboard
-import structlog
+from backend.api.v1.fv_detection import router as fv_detection_router
+from backend.api.v1.validation import router as validation_router
 
 logger = structlog.get_logger(__name__)
+
 api_router = APIRouter()
 
 api_router.include_router(auth_router)
@@ -31,12 +31,10 @@ api_router.include_router(dashboard_router)
 api_router.include_router(energy_balance_router)
 api_router.include_router(climate_router)
 api_router.include_router(ml_router)
-api_router.include_router(fv_detection.router)
-api_router.include_router(validation.router)
-api_router.include_router(dashboard.router)
-
+api_router.include_router(fv_detection_router)
+api_router.include_router(validation_router)
 
 
 @api_router.get("/ping", tags=["Sistema"])
-async def ping():
+async def ping() -> dict:
     return {"message": "pong", "version": "1.0.0"}
