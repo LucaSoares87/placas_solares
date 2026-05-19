@@ -39,7 +39,7 @@ jobs:
           --health-retries 10
 
     env:
-      APP_ENV: testing
+      APP_ENV: development
       APP_NAME: EnergyInferencePlatform
       APP_VERSION: 0.1.0
       APP_SECRET_KEY: change-this-app-secret-with-at-least-32-characters
@@ -122,4 +122,3 @@ jobs:
       - name: Run tests
         run: |
           python -m pytest --cov=backend --cov=ml_engine --cov-report=xml --cov-report=term
-          
