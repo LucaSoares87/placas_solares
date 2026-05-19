@@ -115,7 +115,7 @@ class FeedbackCollector:
             rows.append([
                 r.consumo_estimado_kwh,
                 r.geracao_estimada_kwh,
-                r.kwp_estimado,
+                r.kwp_estimated,
                 r.area_m2,
                 r.confianca,
             ])

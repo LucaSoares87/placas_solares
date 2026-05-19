@@ -7,10 +7,10 @@ from backend.core.config import settings
 
 def get_redis_settings() -> RedisSettings:
     return RedisSettings(
-        host=settings.REDIS_HOST,
-        port=settings.REDIS_PORT,
-        password=settings.REDIS_PASSWORD or None,
-        database=settings.REDIS_DB,
+        host=settings.redis_host,
+        port=settings.redis_port,
+        password=settings.redis_password or None,
+        database=settings.redis_db,
     )
 
 
@@ -23,17 +23,17 @@ class WorkerSettings:
     redis_settings = get_redis_settings()
 
     # Funções registradas no worker
-    functions = []          # preenchido em arq_worker.py via importação dinâmica
+    functions = []
 
     # Limites operacionais
-    max_jobs = 10           # máximo de jobs paralelos
-    job_timeout = 300       # timeout por job em segundos
-    keep_result = 3600      # tempo de retenção do resultado no Redis (1h)
-    max_tries = 3           # tentativas em caso de falha
+    max_jobs = settings.worker_max_jobs
+    job_timeout = settings.worker_job_timeout
+    keep_result = 3600
+    max_tries = 3
 
     # Saúde do worker
     health_check_interval = 30
     health_check_key = "arq:health:unidades_geradoras"
 
-    on_startup = None       # referenciado em arq_worker.py
+    on_startup = None
     on_shutdown = None

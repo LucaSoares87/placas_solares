@@ -109,3 +109,4 @@ def _register_routers(app: FastAPI) -> None:
 
 
 application = create_application()
+app = application

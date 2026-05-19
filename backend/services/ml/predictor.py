@@ -45,13 +45,19 @@ class Predictor:
         predicted = float(self._model.predict(x)[0])
 
         lower, upper = self._confidence_interval(x, predicted)
+        lower = min(lower, predicted)
+        upper = max(upper, predicted)
 
         contributions = self._feature_contributions(feature_vector)
 
         anomaly_score = 0.0
         is_anomaly = False
         if actual_value is not None:
-            anomaly_score = compute_anomaly_score(predicted, actual_value, self._rmse)
+            anomaly_score = compute_anomaly_score(
+                predicted=predicted,
+                actual=actual_value,
+                model_rmse=self._rmse,
+            )
             is_anomaly = anomaly_score > 2.0
 
         logger.debug(
@@ -79,31 +85,28 @@ class Predictor:
         x: np.ndarray,
         predicted: float,
     ) -> tuple[float, float]:
-        """
-        Intervalo de confiança a 95% via estimadores de base (para RF/GBM).
-        Fallback: ±1.96 * RMSE.
-        """
         try:
             if hasattr(self._model, "estimators_"):
-                preds = np.array([
-                    est.predict(x)[0]
-                    for est in self._model.estimators_.flat
-                    if hasattr(est, "predict")
-                ])
+                preds = np.array(
+                    [
+                        est.predict(x)[0]
+                        for est in self._model.estimators_.flat
+                        if hasattr(est, "predict")
+                    ]
+                )
                 if len(preds) > 10:
                     lower = float(np.percentile(preds, 2.5))
                     upper = float(np.percentile(preds, 97.5))
-                    return lower, upper
+                    return min(lower, predicted), max(upper, predicted)
         except Exception:
             pass
 
-        margin = 1.96 * self._rmse
+        margin = abs(1.96 * self._rmse)
         return predicted - margin, predicted + margin
 
     def _feature_contributions(
         self, feature_vector: list[float]
     ) -> dict[str, float]:
-        """Contribuição relativa de cada feature na predição."""
         if not hasattr(self._model, "feature_importances_"):
             return {}
 

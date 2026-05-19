@@ -1,32 +1,37 @@
-import structlog
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from typing import Annotated
 
-from backend.api.deps import get_current_user, get_db
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.api.v1.dependencies import CurrentUser
+from backend.core.database import get_db_session
+from backend.repositories.calibration_repository import CalibrationRepository
+from backend.repositories.validation_repository import (
+    AnomalyRepository,
+    ValidationRepository,
+)
 from backend.schemas.validation import (
-    ValidationRequest,
-    ValidationResponse,
     AnomalyDetectionRequest,
     AnomalyDetectionResponse,
+    CalibrationHistoryResponse,
     CalibrationRequest,
     CalibrationResponse,
     ValidationHistoryResponse,
-    CalibrationHistoryResponse,
+    ValidationRequest,
+    ValidationResponse,
 )
 from backend.services.validation_service import ValidationService
-from backend.repositories.validation_repository import (
-    ValidationRepository,
-    AnomalyRepository,
-)
-from backend.repositories.calibration_repository import CalibrationRepository
 from backend.workers.validation_worker import (
-    run_validation_task,
     run_calibration_task,
+    run_validation_task,
 )
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/validation", tags=["Validação Real"])
+
+DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
 
 
 @router.post(
@@ -41,23 +46,25 @@ router = APIRouter(prefix="/validation", tags=["Validação Real"])
 )
 def validate_transformer(
     request: ValidationRequest,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: CurrentUser,
+    db: DatabaseSession,
 ) -> ValidationResponse:
     logger.info(
         "api.validate_transformer",
         transformer_id=request.transformer_id,
         user=getattr(current_user, "matricula", "unknown"),
     )
+
     try:
         service = ValidationService(db)
         return service.validate_transformer(request)
+
     except Exception as exc:
         logger.error("api.validate_transformer.error", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
-        )
+        ) from exc
 
 
 @router.post(
@@ -67,7 +74,7 @@ def validate_transformer(
 )
 def validate_transformer_async(
     request: ValidationRequest,
-    current_user=Depends(get_current_user),
+    current_user: CurrentUser,
 ) -> dict:
     task = run_validation_task.apply_async(
         kwargs={
@@ -75,11 +82,14 @@ def validate_transformer_async(
             "request_data": request.model_dump(mode="json"),
         }
     )
+
     logger.info(
         "api.validate_transformer_async.queued",
         task_id=task.id,
         transformer_id=request.transformer_id,
+        user=getattr(current_user, "matricula", "unknown"),
     )
+
     return {
         "task_id": task.id,
         "transformer_id": request.transformer_id,
@@ -94,17 +104,23 @@ def validate_transformer_async(
 )
 def get_validation_history(
     transformer_id: str,
+    current_user: CurrentUser,
+    db: DatabaseSession,
     limit: int = Query(default=30, ge=1, le=200),
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
 ) -> ValidationHistoryResponse:
+    logger.info(
+        "api.validation_history",
+        transformer_id=transformer_id,
+        user=getattr(current_user, "matricula", "unknown"),
+    )
+
     repo = ValidationRepository(db)
     records = repo.get_by_transformer(transformer_id, limit=limit)
 
     return ValidationHistoryResponse(
         transformer_id=transformer_id,
         total_records=len(records),
-        records=[ValidationResponse.model_validate(r) for r in records],
+        records=[ValidationResponse.model_validate(record) for record in records],
     )
 
 
@@ -119,23 +135,26 @@ def get_validation_history(
 )
 def detect_anomaly(
     request: AnomalyDetectionRequest,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: CurrentUser,
+    db: DatabaseSession,
 ) -> AnomalyDetectionResponse:
     logger.info(
         "api.detect_anomaly",
         uc_code=request.uc_code,
         transformer_id=request.transformer_id,
+        user=getattr(current_user, "matricula", "unknown"),
     )
+
     try:
         service = ValidationService(db)
         return service.detect_anomaly(request, db)
+
     except Exception as exc:
         logger.error("api.detect_anomaly.error", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
-        )
+        ) from exc
 
 
 @router.get(
@@ -144,9 +163,15 @@ def detect_anomaly(
 )
 def list_active_anomalies(
     transformer_id: str,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: CurrentUser,
+    db: DatabaseSession,
 ) -> dict:
+    logger.info(
+        "api.active_anomalies",
+        transformer_id=transformer_id,
+        user=getattr(current_user, "matricula", "unknown"),
+    )
+
     repo = AnomalyRepository(db)
     records = repo.get_active_by_transformer(transformer_id)
     count = repo.get_unresolved_count(transformer_id)
@@ -156,15 +181,15 @@ def list_active_anomalies(
         "total_active": count,
         "anomalies": [
             {
-                "id": r.id,
-                "uc_code": r.uc_code,
-                "is_anomaly": r.is_anomaly,
-                "consensus": r.consensus,
-                "final_score": r.final_score,
-                "recommendation": r.recommendation,
-                "detected_at": r.detected_at.isoformat(),
+                "id": record.id,
+                "uc_code": record.uc_code,
+                "is_anomaly": record.is_anomaly,
+                "consensus": record.consensus,
+                "final_score": record.final_score,
+                "recommendation": record.recommendation,
+                "detected_at": record.detected_at.isoformat(),
             }
-            for r in records
+            for record in records
         ],
     }
 
@@ -175,18 +200,27 @@ def list_active_anomalies(
 )
 def resolve_anomaly(
     record_id: int,
+    current_user: CurrentUser,
+    db: DatabaseSession,
     resolved_by: str = Query(...),
-    notes: str = Query(default=None),
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    notes: str | None = Query(default=None),
 ) -> dict:
+    logger.info(
+        "api.resolve_anomaly",
+        record_id=record_id,
+        resolved_by=resolved_by,
+        user=getattr(current_user, "matricula", "unknown"),
+    )
+
     repo = AnomalyRepository(db)
     record = repo.resolve(record_id, resolved_by=resolved_by, notes=notes)
+
     if not record:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Anomalia {record_id} não encontrada",
         )
+
     return {
         "id": record.id,
         "resolved": True,
@@ -207,23 +241,26 @@ def resolve_anomaly(
 )
 def calibrate(
     request: CalibrationRequest,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: CurrentUser,
+    db: DatabaseSession,
 ) -> CalibrationResponse:
     logger.info(
         "api.calibrate",
         transformer_id=request.transformer_id,
         records=len(request.feedback_records),
+        user=getattr(current_user, "matricula", "unknown"),
     )
+
     try:
         service = ValidationService(db)
         return service.run_calibration(request, db)
+
     except Exception as exc:
         logger.error("api.calibrate.error", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
-        )
+        ) from exc
 
 
 @router.post(
@@ -233,7 +270,7 @@ def calibrate(
 )
 def calibrate_async(
     request: CalibrationRequest,
-    current_user=Depends(get_current_user),
+    current_user: CurrentUser,
 ) -> dict:
     task = run_calibration_task.apply_async(
         kwargs={
@@ -241,6 +278,14 @@ def calibrate_async(
             "request_data": request.model_dump(mode="json"),
         }
     )
+
+    logger.info(
+        "api.calibrate_async.queued",
+        task_id=task.id,
+        transformer_id=request.transformer_id,
+        user=getattr(current_user, "matricula", "unknown"),
+    )
+
     return {
         "task_id": task.id,
         "transformer_id": request.transformer_id,
@@ -255,10 +300,16 @@ def calibrate_async(
 )
 def get_calibration_history(
     transformer_id: str,
+    current_user: CurrentUser,
+    db: DatabaseSession,
     limit: int = Query(default=20, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
 ) -> CalibrationHistoryResponse:
+    logger.info(
+        "api.calibration_history",
+        transformer_id=transformer_id,
+        user=getattr(current_user, "matricula", "unknown"),
+    )
+
     repo = CalibrationRepository(db)
     latest = repo.get_latest(transformer_id)
     history = repo.get_history(transformer_id, limit=limit)
@@ -271,18 +322,18 @@ def get_calibration_history(
         converged=latest.converged if latest else False,
         history=[
             {
-                "id": h.id,
-                "kwp_factor_old": h.kwp_factor_old,
-                "kwp_factor_new": h.kwp_factor_new,
-                "kwp_factor_delta": h.kwp_factor_delta,
-                "loss_factor_new": h.loss_factor_new,
-                "samples_used": h.samples_used,
-                "mean_kwp_error_pct": h.mean_kwp_error_pct,
-                "converged": h.converged,
-                "executed_at": h.executed_at.isoformat(),
-                "notes": h.notes,
+                "id": item.id,
+                "kwp_factor_old": item.kwp_factor_old,
+                "kwp_factor_new": item.kwp_factor_new,
+                "kwp_factor_delta": item.kwp_factor_delta,
+                "loss_factor_new": item.loss_factor_new,
+                "samples_used": item.samples_used,
+                "mean_kwp_error_pct": item.mean_kwp_error_pct,
+                "converged": item.converged,
+                "executed_at": item.executed_at.isoformat(),
+                "notes": item.notes,
             }
-            for h in history
+            for item in history
         ],
     )
 
@@ -293,12 +344,20 @@ def get_calibration_history(
 )
 def get_task_status(
     task_id: str,
-    current_user=Depends(get_current_user),
+    current_user: CurrentUser,
 ) -> dict:
     from celery.result import AsyncResult
+
     from backend.core.celery_app import celery_app
 
+    logger.info(
+        "api.validation_task_status",
+        task_id=task_id,
+        user=getattr(current_user, "matricula", "unknown"),
+    )
+
     result = AsyncResult(task_id, app=celery_app)
+
     return {
         "task_id": task_id,
         "status": result.state.lower(),

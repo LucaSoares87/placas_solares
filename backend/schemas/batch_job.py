@@ -27,9 +27,9 @@ class BatchJobResponse(BaseModel):
 class BatchJobStatusResponse(BaseModel):
     job_id: str
     status: str
-    enqueue_time: Optional[str]
-    start_time: Optional[str]
-    finish_time: Optional[str]
+    enqueue_time: Optional[str] = None
+    start_time: Optional[str] = None
+    finish_time: Optional[str] = None
     result: Optional[dict] = None
 
 

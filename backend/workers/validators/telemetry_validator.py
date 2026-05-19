@@ -48,7 +48,7 @@ class TelemetryValidator:
 
         # Verifica se a leitura não é do futuro distante
         now = datetime.now(timezone.utc)
-        tolerance = settings.TELEMETRY_TOLERANCE_MINUTES * 60
+        tolerance = settings.telemetry_tolerance_minutes * 60
         if (measured_at - now).total_seconds() > tolerance:
             raise TelemetryValidationError(
                 f"measured_at no futuro além da tolerância: {measured_at.isoformat()}"

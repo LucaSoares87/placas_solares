@@ -1,12 +1,5 @@
 """
 MLService — orquestrador principal do Ato 7.
-
-Responsabilidades:
-  1. Treinar modelo para um target
-  2. Executar predição pontual para transformador + data
-  3. Rodar predições em lote
-  4. Atualizar o campo ml_adjusted no transformer_balances
-  5. Retornar anomalias detectadas
 """
 
 from __future__ import annotations
@@ -20,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.domain.ml_model import (
     ModelStatus,
-    ModelType,
     PredictionTarget,
     TrainingConfig,
     is_model_acceptable,
@@ -45,10 +37,6 @@ class MlService:
         self._repo = MlModelRepository(session)
         self._registry = ModelRegistry(self._repo)
         self._feature_eng = FeatureEngineer(session)
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Treinamento
-    # ─────────────────────────────────────────────────────────────────────────
 
     async def train(
         self,
@@ -123,10 +111,6 @@ class MlService:
             n_samples=len(df),
         )
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Predição pontual
-    # ─────────────────────────────────────────────────────────────────────────
-
     async def predict(
         self,
         transformer_id: str,
@@ -142,25 +126,23 @@ class MlService:
             )
 
         balance = await self._session.scalar(
-            select(TransformerBalance).where(
-                and_(
-                    TransformerBalance.transformer_id == transformer_id,
-                    TransformerBalance.ref_date == ref_date,
-                )
-            )
+            select(TransformerBalance)
+            .where(TransformerBalance.transformer_id == transformer_id)
+            .order_by(TransformerBalance.period_start.desc())
         )
         if not balance:
             raise ValueError(
                 f"Balanço não encontrado para {transformer_id} em {ref_date}."
             )
 
+        from backend.models.climate_record import ClimateRecord
         from backend.repositories.climate_repository import ClimateRepository
+
         climate_repo = ClimateRepository(self._session)
         location = await climate_repo.get_transformer_location(transformer_id)
         climate = None
+
         if location:
-            from backend.models.climate_record import ClimateRecord
-            from sqlalchemy import and_
             climate = await self._session.scalar(
                 select(ClimateRecord).where(
                     and_(
@@ -190,7 +172,6 @@ class MlService:
             actual_value=actual_value,
         )
 
-        # Persistir predição
         await self._repo.save_prediction(
             transformer_id=transformer_id,
             ref_date=ref_date,
@@ -205,7 +186,6 @@ class MlService:
             actual_value=actual_value,
         )
 
-        # Atualizar ml_adjusted no transformer_balances
         if target == PredictionTarget.ADJUSTED_BALANCE:
             await self._update_ml_adjusted(
                 transformer_id, ref_date, result.predicted_value
@@ -225,10 +205,6 @@ class MlService:
             is_anomaly=result.is_anomaly,
             anomaly_score=result.anomaly_score,
         )
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Predição em lote
-    # ─────────────────────────────────────────────────────────────────────────
 
     async def predict_batch(
         self,
@@ -268,10 +244,6 @@ class MlService:
             errors=errors,
         )
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Anomalias
-    # ─────────────────────────────────────────────────────────────────────────
-
     async def get_anomalies(
         self, min_score: float = 2.0, limit: int = 100
     ) -> list[dict]:
@@ -289,10 +261,6 @@ class MlService:
             for r in records
         ]
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Helpers
-    # ─────────────────────────────────────────────────────────────────────────
-
     async def _update_ml_adjusted(
         self,
         transformer_id: str,
@@ -304,7 +272,8 @@ class MlService:
             .where(
                 and_(
                     TransformerBalance.transformer_id == transformer_id,
-                    TransformerBalance.ref_date == ref_date,
+                    TransformerBalance.period_start <= ref_date,
+                    TransformerBalance.period_end >= ref_date,
                 )
             )
             .values(

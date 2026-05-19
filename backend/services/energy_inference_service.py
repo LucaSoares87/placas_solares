@@ -9,8 +9,6 @@ from backend.domain.constants import (
     INJECTION_RATIO_MIN,
     PERFORMANCE_RATIO_DEFAULT,
     PROFILE_CONSUMPTION_KW,
-    RISK_HIGH_THRESHOLD,
-    RISK_MEDIUM_THRESHOLD,
     TECHNICAL_LOSS_FACTOR,
 )
 from backend.domain.entities import (
@@ -37,8 +35,6 @@ class EnergyInferenceService:
         self._bal_repo = TransformerBalanceRepository(session)
         self._uc_repo = ConsumerUnitRepository(session)
         self._tr_repo = TransformerRepository(session)
-
-    # ── Inferência individual ─────────────────────────────────────────────────
 
     async def register_inference(
         self, data: EnergyInferenceCreate
@@ -93,13 +89,7 @@ class EnergyInferenceService:
     ) -> list[EnergyInference]:
         return await self._inf_repo.list_by_transformer(transformer_id, offset, limit)
 
-    # ── Inferência automática por perfil ─────────────────────────────────────
-
     async def infer_from_profile(self, uc_code: str) -> EnergyInference:
-        """
-        Gera inferência padrão com base no perfil da UC,
-        utilizada quando não há dados telemetrados ou de satélite.
-        """
         uc = await self._uc_repo.get_by_uc_code(uc_code)
         if not uc:
             raise EntityNotFoundException(
@@ -119,10 +109,7 @@ class EnergyInferenceService:
         confidence = CONFIDENCE_MEDIUM
 
         if has_fv and kwp > 0:
-            from backend.domain.constants import (
-                IRRADIANCE_NORDESTE_AVG,
-                PANEL_AREA_M2,
-            )
+            from backend.domain.constants import IRRADIANCE_NORDESTE_AVG
 
             generation_kw = round(
                 kwp * IRRADIANCE_NORDESTE_AVG * PERFORMANCE_RATIO_DEFAULT / 24, 4
@@ -151,8 +138,6 @@ class EnergyInferenceService:
 
         return await self.register_inference(data)
 
-    # ── Balanço do transformador ──────────────────────────────────────────────
-
     async def compute_transformer_balance(
         self,
         transformer_id: str,
@@ -160,10 +145,6 @@ class EnergyInferenceService:
         period_start,
         period_end,
     ) -> TransformerBalance:
-        """
-        Calcula o balanço energético de um transformador
-        consolidando as últimas inferências de todas as UCs vinculadas.
-        """
         transformer = await self._tr_repo.get_by_transformer_id(transformer_id)
         if not transformer:
             raise EntityNotFoundException(
@@ -243,29 +224,33 @@ class EnergyInferenceService:
             )
         return balance
 
-    # ── Helpers privados ──────────────────────────────────────────────────────
-
     @staticmethod
     def _classify_risk(confidence: float) -> RiskScore:
-        if confidence >= CONFIDENCE_HIGH:
+        if confidence >= 0.80:
             return RiskScore.LOW
-        if confidence >= CONFIDENCE_MEDIUM:
+        if confidence >= 0.60:
             return RiskScore.MEDIUM
-        if confidence >= RISK_MEDIUM_THRESHOLD:
+        if confidence >= 0.30:
             return RiskScore.HIGH
         return RiskScore.CRITICAL
 
     @staticmethod
     def _classify_balance(percentage_error: float) -> BalanceStatus:
         abs_err = abs(percentage_error)
+
         if abs_err <= 5.0:
             return BalanceStatus.BALANCED
+
         if percentage_error > 10.0:
             return BalanceStatus.OVER_INJECTED
+
         if percentage_error < -10.0:
             return BalanceStatus.UNDER_GENERATED
-        if abs_err > 15.0:
-            return BalanceStatus.HIGH_LOSS
-        if abs_err > 25.0:
+
+        if abs_err >= 25.0:
             return BalanceStatus.CRITICAL
+
+        if abs_err >= 15.0:
+            return BalanceStatus.HIGH_LOSS
+
         return BalanceStatus.UNKNOWN

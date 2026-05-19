@@ -2,10 +2,10 @@
 Treinador de modelos ML.
 
 Responsabilidades:
-  1. Dividir dataset (temporal ou aleatório)
-  2. Treinar modelo escolhido (GBM, RF, LR, XGBoost)
-  3. Validação cruzada temporal
-  4. Calcular métricas completas + feature importances
+  1. Dividir dataset temporal ou aleatório
+  2. Treinar modelo escolhido: GBM, RF, LR ou XGBoost
+  3. Executar validação cruzada quando houver dados suficientes
+  4. Calcular métricas completas e feature importances
   5. Serializar o artefato do modelo
 """
 
@@ -22,33 +22,34 @@ import structlog
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+from sklearn.model_selection import TimeSeriesSplit, cross_val_score, train_test_split
 
 from backend.domain.ml_model import (
     FEATURE_NAMES,
     DataSplitStrategy,
     ModelMetrics,
-    ModelStatus,
     ModelType,
-    PredictionTarget,
     TrainingConfig,
     is_model_acceptable,
 )
 
 logger = structlog.get_logger(__name__)
 
-# Tenta importar XGBoost — opcional
 try:
     from xgboost import XGBRegressor
+
     _XGBOOST_AVAILABLE = True
 except ImportError:
+    XGBRegressor = None
     _XGBOOST_AVAILABLE = False
 
 
 def _mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     mask = y_true != 0
+
     if not mask.any():
         return 0.0
+
     return float(
         np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100.0
     )
@@ -61,30 +62,37 @@ class ModelTrainer:
         self._version: str = ""
 
     def train(self, df: pd.DataFrame) -> tuple[ModelMetrics, bytes, str]:
-        """
-        Treina o modelo completo.
-        Retorna: (métricas, artefato_pkl, versão).
-        """
+        self._validate_dataframe(df)
+
         log = logger.bind(
             model_type=self._config.model_type.value,
             target=self._config.target.value,
         )
 
-        feature_cols = [c for c in FEATURE_NAMES if c in df.columns]
-        X = df[feature_cols].values.astype(np.float64)
-        y = df["target"].values.astype(np.float64)
+        feature_cols = [column for column in FEATURE_NAMES if column in df.columns]
 
-        log.info("trainer.starting", n_samples=len(X), n_features=len(feature_cols))
+        if not feature_cols:
+            raise ValueError("Nenhuma feature válida encontrada no dataframe.")
 
-        X_train, X_test, y_train, y_test = self._split(X, y)
+        x_values = df[feature_cols].values.astype(np.float64)
+        y_values = df["target"].values.astype(np.float64)
+
+        log.info(
+            "trainer.starting",
+            n_samples=len(x_values),
+            n_features=len(feature_cols),
+        )
+
+        x_train, x_test, y_train, y_test = self._split(x_values, y_values)
 
         model = self._build_model()
-        model.fit(X_train, y_train)
+        model.fit(x_train, y_train)
 
-        y_pred = model.predict(X_test)
+        y_pred = model.predict(x_test)
+
         metrics = self._compute_metrics(
             model=model,
-            X_train=X_train,
+            x_train=x_train,
             y_train=y_train,
             y_test=y_test,
             y_pred=y_pred,
@@ -92,6 +100,7 @@ class ModelTrainer:
         )
 
         acceptable = is_model_acceptable(metrics, self._config.target)
+
         log.info(
             "trainer.finished",
             r2=metrics.r2,
@@ -102,86 +111,88 @@ class ModelTrainer:
 
         self._model = model
         self._version = self._generate_version()
+
         artifact = pickle.dumps(model)
 
         return metrics, artifact, self._version
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Split de dados
-    # ─────────────────────────────────────────────────────────────────────────
-
     def _split(
-        self, X: np.ndarray, y: np.ndarray
+        self,
+        x_values: np.ndarray,
+        y_values: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        n = len(X)
-        if self._config.split_strategy == DataSplitStrategy.TEMPORAL:
-            split_idx = int(n * (1.0 - self._config.test_size))
-            return X[:split_idx], X[split_idx:], y[:split_idx], y[split_idx:]
+        sample_count = len(x_values)
 
-        # Random / Stratified
-        from sklearn.model_selection import train_test_split
+        if sample_count < 4:
+            raise ValueError("O dataset precisa ter pelo menos 4 amostras para treino.")
+
+        if self._config.split_strategy == DataSplitStrategy.TEMPORAL:
+            split_index = int(sample_count * (1.0 - self._config.test_size))
+            split_index = max(1, min(split_index, sample_count - 1))
+
+            return (
+                x_values[:split_index],
+                x_values[split_index:],
+                y_values[:split_index],
+                y_values[split_index:],
+            )
+
         return train_test_split(
-            X, y,
+            x_values,
+            y_values,
             test_size=self._config.test_size,
             random_state=self._config.random_state,
         )
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Construção do modelo
-    # ─────────────────────────────────────────────────────────────────────────
-
     def _build_model(self) -> Any:
-        cfg = self._config
+        config = self._config
 
-        if cfg.model_type == ModelType.GRADIENT_BOOSTING:
+        if config.model_type == ModelType.GRADIENT_BOOSTING:
             return GradientBoostingRegressor(
-                n_estimators=cfg.n_estimators,
-                max_depth=cfg.max_depth,
-                learning_rate=cfg.learning_rate,
-                min_samples_leaf=cfg.min_samples_leaf,
-                random_state=cfg.random_state,
+                n_estimators=config.n_estimators,
+                max_depth=config.max_depth,
+                learning_rate=config.learning_rate,
+                min_samples_leaf=config.min_samples_leaf,
+                random_state=config.random_state,
             )
 
-        if cfg.model_type == ModelType.RANDOM_FOREST:
+        if config.model_type == ModelType.RANDOM_FOREST:
             return RandomForestRegressor(
-                n_estimators=cfg.n_estimators,
-                max_depth=cfg.max_depth,
-                min_samples_leaf=cfg.min_samples_leaf,
-                random_state=cfg.random_state,
+                n_estimators=config.n_estimators,
+                max_depth=config.max_depth,
+                min_samples_leaf=config.min_samples_leaf,
+                random_state=config.random_state,
                 n_jobs=-1,
             )
 
-        if cfg.model_type == ModelType.LINEAR_REGRESSION:
+        if config.model_type == ModelType.LINEAR_REGRESSION:
             return LinearRegression()
 
-        if cfg.model_type == ModelType.XGBOOST:
-            if not _XGBOOST_AVAILABLE:
+        if config.model_type == ModelType.XGBOOST:
+            if not _XGBOOST_AVAILABLE or XGBRegressor is None:
                 logger.warning("trainer.xgboost_unavailable_fallback_gbm")
                 return GradientBoostingRegressor(
-                    n_estimators=cfg.n_estimators,
-                    max_depth=cfg.max_depth,
-                    learning_rate=cfg.learning_rate,
-                    random_state=cfg.random_state,
+                    n_estimators=config.n_estimators,
+                    max_depth=config.max_depth,
+                    learning_rate=config.learning_rate,
+                    random_state=config.random_state,
                 )
+
             return XGBRegressor(
-                n_estimators=cfg.n_estimators,
-                max_depth=cfg.max_depth,
-                learning_rate=cfg.learning_rate,
-                random_state=cfg.random_state,
+                n_estimators=config.n_estimators,
+                max_depth=config.max_depth,
+                learning_rate=config.learning_rate,
+                random_state=config.random_state,
                 n_jobs=-1,
                 verbosity=0,
             )
 
-        raise ValueError(f"ModelType desconhecido: {cfg.model_type}")
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Métricas
-    # ─────────────────────────────────────────────────────────────────────────
+        raise ValueError(f"ModelType desconhecido: {config.model_type}")
 
     def _compute_metrics(
         self,
         model: Any,
-        X_train: np.ndarray,
+        x_train: np.ndarray,
         y_train: np.ndarray,
         y_test: np.ndarray,
         y_pred: np.ndarray,
@@ -192,27 +203,16 @@ class ModelTrainer:
         r2 = float(r2_score(y_test, y_pred))
         mape = _mape(y_test, y_pred)
 
-        # Cross-validation temporal
-        tscv = TimeSeriesSplit(n_splits=self._config.cv_folds)
-        X_all = np.vstack([X_train, y_test.reshape(-1, 1)[:0]])
-        cv_scores = cross_val_score(
-            model, X_train, y_train,
-            cv=tscv, scoring="r2", n_jobs=-1,
+        cv_scores_list = self._compute_cv_scores(
+            model=model,
+            x_train=x_train,
+            y_train=y_train,
         )
-        cv_scores_list = cv_scores.tolist()
 
-        # Feature importances
-        importances: dict[str, float] = {}
-        if hasattr(model, "feature_importances_"):
-            importances = {
-                col: round(float(imp), 6)
-                for col, imp in zip(feature_cols, model.feature_importances_)
-            }
-        elif hasattr(model, "coef_"):
-            importances = {
-                col: round(float(abs(coef)), 6)
-                for col, coef in zip(feature_cols, model.coef_)
-            }
+        importances = self._extract_feature_importances(
+            model=model,
+            feature_cols=feature_cols,
+        )
 
         return ModelMetrics(
             mae=round(mae, 4),
@@ -220,12 +220,75 @@ class ModelTrainer:
             r2=round(r2, 4),
             mape=round(mape, 4),
             cv_scores=cv_scores_list,
-            cv_mean=round(float(np.mean(cv_scores)), 4),
-            cv_std=round(float(np.std(cv_scores)), 4),
+            cv_mean=round(float(np.mean(cv_scores_list)), 4)
+            if cv_scores_list
+            else 0.0,
+            cv_std=round(float(np.std(cv_scores_list)), 4)
+            if cv_scores_list
+            else 0.0,
             n_train=len(y_train),
             n_test=len(y_test),
             feature_importances=importances,
         )
+
+    def _compute_cv_scores(
+        self,
+        model: Any,
+        x_train: np.ndarray,
+        y_train: np.ndarray,
+    ) -> list[float]:
+        if len(x_train) <= self._config.cv_folds:
+            return []
+
+        n_splits = min(self._config.cv_folds, len(x_train) - 1)
+
+        if n_splits < 2:
+            return []
+
+        splitter = TimeSeriesSplit(n_splits=n_splits)
+
+        try:
+            scores = cross_val_score(
+                model,
+                x_train,
+                y_train,
+                cv=splitter,
+                scoring="r2",
+                n_jobs=-1,
+            )
+            return [round(float(score), 6) for score in scores]
+        except ValueError as exc:
+            logger.warning("trainer.cross_validation_skipped", error=str(exc))
+            return []
+
+    def _extract_feature_importances(
+        self,
+        model: Any,
+        feature_cols: list[str],
+    ) -> dict[str, float]:
+        if hasattr(model, "feature_importances_"):
+            return {
+                column: round(float(importance), 6)
+                for column, importance in zip(feature_cols, model.feature_importances_)
+            }
+
+        if hasattr(model, "coef_"):
+            return {
+                column: round(float(abs(coefficient)), 6)
+                for column, coefficient in zip(feature_cols, model.coef_)
+            }
+
+        return {}
+
+    def _validate_dataframe(self, df: pd.DataFrame) -> None:
+        if df.empty:
+            raise ValueError("O dataframe de treino não pode estar vazio.")
+
+        if "target" not in df.columns:
+            raise ValueError("O dataframe de treino precisa conter a coluna 'target'.")
+
+        if len(df) < 4:
+            raise ValueError("O dataframe precisa ter pelo menos 4 linhas.")
 
     @staticmethod
     def _generate_version() -> str:

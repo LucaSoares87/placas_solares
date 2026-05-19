@@ -10,10 +10,6 @@ from enum import Enum
 from typing import Optional
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Enums
-# ─────────────────────────────────────────────────────────────────────────────
-
 class ModelType(str, Enum):
     GRADIENT_BOOSTING = "gradient_boosting"
     RANDOM_FOREST = "random_forest"
@@ -29,33 +25,22 @@ class ModelStatus(str, Enum):
 
 
 class PredictionTarget(str, Enum):
-    ENERGY_LOSS_PCT = "energy_loss_pct"     # % de perda energética estimada
-    ADJUSTED_BALANCE = "adjusted_balance"   # balanço ajustado pelo modelo (kWh)
-    FRAUD_SCORE = "fraud_score"             # score de suspeita de fraude [0–1]
+    ENERGY_LOSS_PCT = "energy_loss_pct"
+    ADJUSTED_BALANCE = "adjusted_balance"
+    FRAUD_SCORE = "fraud_score"
 
 
 class DataSplitStrategy(str, Enum):
-    TEMPORAL = "temporal"       # Respeita ordem temporal
-    RANDOM = "random"           # Aleatorizado (não recomendado para séries temporais)
-    STRATIFIED = "stratified"   # Estratificado por status de balanço
+    TEMPORAL = "temporal"
+    RANDOM = "random"
+    STRATIFIED = "stratified"
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Feature vector
-# ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
 class FeatureVector:
-    """
-    Vetor de features que alimenta o modelo de ML.
-    Agrega dados do Ato 5 (balanço) e Ato 6 (clima).
-    """
-
-    # Identificação
     transformer_id: str
     ref_date: str
 
-    # Features de balanço (Ato 5)
     measured_energy_kwh: float
     total_consumption_kwh: float
     total_generation_kwh: float
@@ -65,7 +50,6 @@ class FeatureVector:
     num_consumer_units: int
     avg_confidence_inference: float
 
-    # Features climáticas (Ato 6)
     irradiance_factor: float
     temperature_factor: float
     cloud_factor: float
@@ -74,21 +58,15 @@ class FeatureVector:
     temperature_avg_c: float
     cloud_cover_avg_pct: float
 
-    # Features temporais (derivadas)
     month: int
     day_of_week: int
     is_weekend: bool
     quarter: int
 
-    # Label (target) — preenchido apenas no treinamento
     label_energy_loss_pct: Optional[float] = None
     label_adjusted_balance: Optional[float] = None
     label_fraud_score: Optional[float] = None
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Configuração de treinamento
-# ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
 class TrainingConfig:
@@ -104,16 +82,12 @@ class TrainingConfig:
     cv_folds: int = 5
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Métricas de avaliação
-# ─────────────────────────────────────────────────────────────────────────────
-
 @dataclass
 class ModelMetrics:
-    mae: float          # Mean Absolute Error
-    rmse: float         # Root Mean Squared Error
-    r2: float           # Coeficiente de determinação
-    mape: float         # Mean Absolute Percentage Error
+    mae: float
+    rmse: float
+    r2: float
+    mape: float
     cv_scores: list[float] = field(default_factory=list)
     cv_mean: float = 0.0
     cv_std: float = 0.0
@@ -121,10 +95,6 @@ class ModelMetrics:
     n_test: int = 0
     feature_importances: dict[str, float] = field(default_factory=dict)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Resultado de predição
-# ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
 class PredictionResult:
@@ -139,10 +109,6 @@ class PredictionResult:
     is_anomaly: bool
     anomaly_score: float
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Funções de domínio puras
-# ─────────────────────────────────────────────────────────────────────────────
 
 FEATURE_NAMES = [
     "measured_energy_kwh",
@@ -168,7 +134,6 @@ FEATURE_NAMES = [
 
 
 def extract_feature_array(fv: FeatureVector) -> list[float]:
-    """Serializa o FeatureVector em lista ordenada para o modelo."""
     return [
         fv.measured_energy_kwh,
         fv.total_consumption_kwh,
@@ -193,15 +158,11 @@ def extract_feature_array(fv: FeatureVector) -> list[float]:
 
 
 def is_model_acceptable(metrics: ModelMetrics, target: PredictionTarget) -> bool:
-    """
-    Valida se o modelo treinado atende os critérios mínimos de qualidade.
-    Critérios diferenciados por target.
-    """
     if target == PredictionTarget.ENERGY_LOSS_PCT:
         return metrics.r2 >= 0.70 and metrics.mape <= 15.0
 
     if target == PredictionTarget.ADJUSTED_BALANCE:
-        return metrics.r2 >= 0.65 and metrics.mae <= 50.0  # kWh
+        return metrics.r2 >= 0.65 and metrics.mae <= 50.0
 
     if target == PredictionTarget.FRAUD_SCORE:
         return metrics.r2 >= 0.60
@@ -212,12 +173,13 @@ def is_model_acceptable(metrics: ModelMetrics, target: PredictionTarget) -> bool
 def compute_anomaly_score(
     predicted: float,
     actual: float,
-    model_rmse: float,
+    model_rmse: Optional[float] = None,
+    *,
+    rmse: Optional[float] = None,
 ) -> float:
-    """
-    Score de anomalia baseado na distância entre predito e real, normalizada pelo RMSE.
-    Score > 2.0 → anomalia significativa.
-    """
-    if model_rmse <= 0:
+    effective_rmse = rmse if rmse is not None else model_rmse
+
+    if effective_rmse is None or effective_rmse <= 0:
         return 0.0
-    return round(abs(predicted - actual) / model_rmse, 4)
+
+    return round(abs(predicted - actual) / effective_rmse, 4)
