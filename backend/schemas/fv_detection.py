@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional
 from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class InjectionStatus(str, Enum):
@@ -38,10 +39,10 @@ class FVDetectionRequest(BaseModel):
 
     @field_validator("uc_code")
     @classmethod
-    def uc_code_not_empty(cls, v: str) -> str:
-        if not v.strip():
+    def uc_code_not_empty(cls, value: str) -> str:
+        if not value.strip():
             raise ValueError("uc_code não pode ser vazio")
-        return v.strip()
+        return value.strip()
 
 
 class DetectedPanelOutput(BaseModel):
@@ -54,6 +55,8 @@ class DetectedPanelOutput(BaseModel):
 
 
 class FVDetectionResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     uc_code: str
     transformer_id: str
     latitude: float
