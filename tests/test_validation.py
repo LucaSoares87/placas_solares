@@ -1,40 +1,35 @@
 import pytest
-from datetime import datetime
-from unittest.mock import MagicMock, patch
+from datetime import datetime, timezone
+
 import numpy as np
 
-from ml_engine.calibration.kwp_calibrator import (
-    KWpCalibrator,
-    CalibrationSample,
-    DEFAULT_FACTOR,
-    MIN_SAMPLES,
-)
-from ml_engine.calibration.loss_calibrator import (
-    LossCalibrator,
-    LossSample,
+from backend.schemas.validation import (
+    AnomalyDetectionRequest,
+    CalibrationRequest,
+    FeedbackRecordInput,
+    ValidationRequest,
 )
 from ml_engine.anomaly_detection.anomaly_service import (
     AnomalyDetectionService,
     EnergyFeatureVector,
 )
-from ml_engine.anomaly_detection.isolation_forest import IsolationForestDetector
-from ml_engine.anomaly_detection.one_class_svm import OneClassSVMDetector
+from ml_engine.calibration.kwp_calibrator import (
+    DEFAULT_FACTOR,
+    MIN_SAMPLES,
+    CalibrationSample,
+    KWpCalibrator,
+)
+from ml_engine.calibration.loss_calibrator import LossCalibrator, LossSample
 from ml_engine.continuous_learning.feedback_collector import (
     FeedbackCollector,
     FeedbackRecord,
 )
 from ml_engine.continuous_learning.model_updater import ModelUpdater
-from backend.schemas.validation import (
-    ValidationRequest,
-    AnomalyDetectionRequest,
-    CalibrationRequest,
-    FeedbackRecordInput,
-)
 
 
-# ──────────────────────────────────────────────
-# Fixtures
-# ──────────────────────────────────────────────
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
 
 @pytest.fixture
 def transformer_id() -> str:
@@ -74,7 +69,7 @@ def feedback_records(transformer_id: str) -> list[FeedbackRecord]:
         FeedbackRecord(
             uc_code=f"UC-{i:03d}",
             transformer_id=transformer_id,
-            timestamp=datetime.utcnow(),
+            timestamp=utc_now(),
             kwp_estimated=4.0,
             kwp_real=4.2,
             consumo_estimado_kwh=150.0,
@@ -87,10 +82,6 @@ def feedback_records(transformer_id: str) -> list[FeedbackRecord]:
         for i in range(5)
     ]
 
-
-# ──────────────────────────────────────────────
-# KWpCalibrator
-# ──────────────────────────────────────────────
 
 class TestKWpCalibrator:
     def test_calibrate_returns_none_insufficient_samples(
@@ -115,8 +106,8 @@ class TestKWpCalibrator:
         calibration_samples: list[CalibrationSample],
     ):
         calibrator = KWpCalibrator()
-        for s in calibration_samples:
-            calibrator.add_sample(s)
+        for sample in calibration_samples:
+            calibrator.add_sample(sample)
 
         result = calibrator.calibrate(transformer_id)
 
@@ -146,8 +137,8 @@ class TestKWpCalibrator:
         calibration_samples: list[CalibrationSample],
     ):
         calibrator = KWpCalibrator()
-        for s in calibration_samples:
-            calibrator.add_sample(s)
+        for sample in calibration_samples:
+            calibrator.add_sample(sample)
         result = calibrator.calibrate(transformer_id)
         assert result is not None
         assert result.mean_error_pct >= 0.0
@@ -187,15 +178,11 @@ class TestKWpCalibrator:
         calibration_samples: list[CalibrationSample],
     ):
         calibrator = KWpCalibrator()
-        for s in calibration_samples:
-            calibrator.add_sample(s)
+        for sample in calibration_samples:
+            calibrator.add_sample(sample)
         calibrator.reset_history(transformer_id)
         assert calibrator._history == []
 
-
-# ──────────────────────────────────────────────
-# LossCalibrator
-# ──────────────────────────────────────────────
 
 class TestLossCalibrator:
     def test_calibrate_returns_none_insufficient(self, transformer_id: str):
@@ -250,10 +237,6 @@ class TestLossCalibrator:
         assert len(calibrator._samples) == 0
 
 
-# ──────────────────────────────────────────────
-# AnomalyDetectionService
-# ──────────────────────────────────────────────
-
 class TestAnomalyDetectionService:
     def test_detect_returns_result_unfitted(
         self, feature_vector: EnergyFeatureVector
@@ -282,7 +265,6 @@ class TestAnomalyDetectionService:
         normal_data = np.random.normal(loc=100, scale=5, size=(50, 7))
         service.fit(normal_data)
 
-        normal_point = np.array([100.0, 100.0, 10.0, 5.0, 5.0, 28.0, 0.85])
         feat = EnergyFeatureVector(
             consumo_estimado_kwh=100.0,
             geracao_estimada_kwh=100.0,
@@ -311,10 +293,6 @@ class TestAnomalyDetectionService:
         )
         assert rec == "inspecao_urgente"
 
-
-# ──────────────────────────────────────────────
-# FeedbackCollector
-# ──────────────────────────────────────────────
 
 class TestFeedbackCollector:
     def test_add_and_retrieve(
@@ -369,10 +347,6 @@ class TestFeedbackCollector:
         assert result is None
 
 
-# ──────────────────────────────────────────────
-# ModelUpdater
-# ──────────────────────────────────────────────
-
 class TestModelUpdater:
     def test_cycle_returns_none_no_feedback(self, transformer_id: str):
         updater = ModelUpdater(
@@ -426,7 +400,7 @@ class TestModelUpdater:
         cycles = updater.get_cycles(transformer_id)
         assert len(cycles) >= 0
 
-    def test_properties_accessible(self, transformer_id: str):
+    def test_properties_accessible(self):
         updater = ModelUpdater(
             KWpCalibrator(),
             LossCalibrator(),
@@ -436,45 +410,48 @@ class TestModelUpdater:
         assert updater.current_loss_factor > 0
 
 
-# ──────────────────────────────────────────────
-# ValidationService (unit — sem banco real)
-# ──────────────────────────────────────────────
-
 class TestValidationServiceUnit:
     def test_classify_status_validated(self):
         from backend.services.validation_service import ValidationService
-        svc = ValidationService.__new__(ValidationService)
-        assert svc._classify_status(8.0) == "validado"
+
+        service = ValidationService.__new__(ValidationService)
+        assert service._classify_status(8.0) == "validado"
 
     def test_classify_status_moderate(self):
         from backend.services.validation_service import ValidationService
-        svc = ValidationService.__new__(ValidationService)
-        assert svc._classify_status(15.0) == "divergencia_moderada"
+
+        service = ValidationService.__new__(ValidationService)
+        assert service._classify_status(15.0) == "divergencia_moderada"
 
     def test_classify_status_high(self):
         from backend.services.validation_service import ValidationService
-        svc = ValidationService.__new__(ValidationService)
-        assert svc._classify_status(28.0) == "divergencia_alta"
+
+        service = ValidationService.__new__(ValidationService)
+        assert service._classify_status(28.0) == "divergencia_alta"
 
     def test_classify_status_critical(self):
         from backend.services.validation_service import ValidationService
-        svc = ValidationService.__new__(ValidationService)
-        assert svc._classify_status(50.0) == "critico"
+
+        service = ValidationService.__new__(ValidationService)
+        assert service._classify_status(50.0) == "critico"
 
     def test_classify_status_no_measurement(self):
         from backend.services.validation_service import ValidationService
-        svc = ValidationService.__new__(ValidationService)
-        assert svc._classify_status(None) == "sem_medicao_real"
+
+        service = ValidationService.__new__(ValidationService)
+        assert service._classify_status(None) == "sem_medicao_real"
 
     def test_calculate_score_low_risk(self):
         from backend.services.validation_service import ValidationService
-        svc = ValidationService.__new__(ValidationService)
-        assert svc._calculate_score(5.0, 0.90) == "baixo_risco"
+
+        service = ValidationService.__new__(ValidationService)
+        assert service._calculate_score(5.0, 0.90) == "baixo_risco"
 
     def test_calculate_score_inspection_priority(self):
         from backend.services.validation_service import ValidationService
-        svc = ValidationService.__new__(ValidationService)
-        assert svc._calculate_score(40.0, 0.30) == "prioridade_inspecao"
+
+        service = ValidationService.__new__(ValidationService)
+        assert service._calculate_score(40.0, 0.30) == "prioridade_inspecao"
 
     def test_feature_vector_to_array_shape(
         self, feature_vector: EnergyFeatureVector

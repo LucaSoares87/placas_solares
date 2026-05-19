@@ -1,16 +1,16 @@
 import pytest
-from datetime import datetime
-from unittest.mock import MagicMock, patch
+from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 from backend.schemas.dashboard import (
     SnapshotRequest,
     ExportRequest,
-    GlobalKPIsResponse,
-    RankingResponse,
 )
 
 
-# ── Fixtures ───────────────────────────────────────────────────────────────
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
 
 @pytest.fixture
 def transformer_id() -> str:
@@ -48,8 +48,6 @@ def mock_db() -> MagicMock:
     return MagicMock()
 
 
-# ── SnapshotRequest schema ─────────────────────────────────────────────────
-
 class TestSnapshotRequest:
     def test_valid_request(self, snapshot_request: SnapshotRequest):
         assert snapshot_request.transformer_id == "TR-102"
@@ -76,29 +74,40 @@ class TestSnapshotRequest:
         assert req.total_anomalias_ativas == 0
 
 
-# ── AlertService ───────────────────────────────────────────────────────────
-
 class TestAlertService:
     def test_evaluate_snapshot_no_alerts(self, mock_db: MagicMock):
-        from backend.services.alert_service import AlertService, AlertThreshold
+        from backend.services.alert_service import AlertService
 
         service = AlertService(mock_db)
         service._repo = MagicMock()
-        service._repo.create = MagicMock(return_value=MagicMock(
-            id=1, transformer_id="TR-102", uc_code=None,
-            alert_type="test", severity="medio", title="t",
-            message="m", threshold_value=None, observed_value=None,
-            status="aberto", acknowledged_by=None, acknowledged_at=None,
-            resolved_at=None, created_at=datetime.utcnow(),
-        ))
+        service._repo.create = MagicMock(
+            return_value=MagicMock(
+                id=1,
+                transformer_id="TR-102",
+                uc_code=None,
+                alert_type="test",
+                severity="medio",
+                title="t",
+                message="m",
+                threshold_value=None,
+                observed_value=None,
+                status="aberto",
+                acknowledged_by=None,
+                acknowledged_at=None,
+                resolved_at=None,
+                created_at=utc_now(),
+            )
+        )
 
-        result = service.evaluate_snapshot({
-            "transformer_id": "TR-102",
-            "erro_balanco_pct": 5.0,
-            "total_anomalias_ativas": 1,
-            "confianca_media_deteccao": 0.85,
-            "score_operacional": "baixo_risco",
-        })
+        result = service.evaluate_snapshot(
+            {
+                "transformer_id": "TR-102",
+                "erro_balanco_pct": 5.0,
+                "total_anomalias_ativas": 1,
+                "confianca_media_deteccao": 0.85,
+                "score_operacional": "baixo_risco",
+            }
+        )
         assert result == []
 
     def test_evaluate_snapshot_critico(self, mock_db: MagicMock):
@@ -121,7 +130,7 @@ class TestAlertService:
             mock.acknowledged_by = None
             mock.acknowledged_at = None
             mock.resolved_at = None
-            mock.created_at = datetime.utcnow()
+            mock.created_at = utc_now()
             created_records.append(mock)
             return mock
 
@@ -129,16 +138,18 @@ class TestAlertService:
         service._repo = MagicMock()
         service._repo.create = MagicMock(side_effect=fake_create)
 
-        result = service.evaluate_snapshot({
-            "transformer_id": "TR-102",
-            "erro_balanco_pct": 40.0,
-            "total_anomalias_ativas": 10,
-            "confianca_media_deteccao": 0.40,
-            "score_operacional": "prioridade_inspecao",
-        })
+        result = service.evaluate_snapshot(
+            {
+                "transformer_id": "TR-102",
+                "erro_balanco_pct": 40.0,
+                "total_anomalias_ativas": 10,
+                "confianca_media_deteccao": 0.40,
+                "score_operacional": "prioridade_inspecao",
+            }
+        )
 
         assert len(result) >= 3
-        severities = {a.severity for a in result}
+        severities = {alert.severity for alert in result}
         assert "critico" in severities
 
     def test_evaluate_snapshot_erro_alto(self, mock_db: MagicMock):
@@ -147,25 +158,37 @@ class TestAlertService:
         created = []
 
         def fake_create(data):
-            m = MagicMock(**{**data, "id": 1, "uc_code": None,
-                             "acknowledged_by": None, "acknowledged_at": None,
-                             "resolved_at": None, "created_at": datetime.utcnow()})
-            created.append(m)
-            return m
+            mock = MagicMock(
+                **{
+                    **data,
+                    "id": 1,
+                    "uc_code": None,
+                    "acknowledged_by": None,
+                    "acknowledged_at": None,
+                    "resolved_at": None,
+                    "created_at": utc_now(),
+                }
+            )
+            created.append(mock)
+            return mock
 
         service = AlertService(mock_db)
         service._repo = MagicMock()
         service._repo.create = MagicMock(side_effect=fake_create)
 
-        service.evaluate_snapshot({
-            "transformer_id": "TR-102",
-            "erro_balanco_pct": 25.0,
-            "total_anomalias_ativas": 0,
-            "confianca_media_deteccao": 0.85,
-            "score_operacional": "alto_risco",
-        })
+        service.evaluate_snapshot(
+            {
+                "transformer_id": "TR-102",
+                "erro_balanco_pct": 25.0,
+                "total_anomalias_ativas": 0,
+                "confianca_media_deteccao": 0.85,
+                "score_operacional": "alto_risco",
+            }
+        )
 
-        alert_types = [c["alert_type"] for c in [call.args[0] for call in service._repo.create.call_args_list]]
+        alert_types = [
+            call.args[0]["alert_type"] for call in service._repo.create.call_args_list
+        ]
         assert "erro_balanco_alto" in alert_types
 
     def test_evaluate_low_confidence_alert(self, mock_db: MagicMock):
@@ -174,29 +197,39 @@ class TestAlertService:
         created = []
 
         def fake_create(data):
-            m = MagicMock(**{**data, "id": 1, "uc_code": None,
-                             "acknowledged_by": None, "acknowledged_at": None,
-                             "resolved_at": None, "created_at": datetime.utcnow()})
-            created.append(m)
-            return m
+            mock = MagicMock(
+                **{
+                    **data,
+                    "id": 1,
+                    "uc_code": None,
+                    "acknowledged_by": None,
+                    "acknowledged_at": None,
+                    "resolved_at": None,
+                    "created_at": utc_now(),
+                }
+            )
+            created.append(mock)
+            return mock
 
         service = AlertService(mock_db)
         service._repo = MagicMock()
         service._repo.create = MagicMock(side_effect=fake_create)
 
-        service.evaluate_snapshot({
-            "transformer_id": "TR-102",
-            "erro_balanco_pct": 5.0,
-            "total_anomalias_ativas": 0,
-            "confianca_media_deteccao": 0.45,
-            "score_operacional": "baixo_risco",
-        })
+        service.evaluate_snapshot(
+            {
+                "transformer_id": "TR-102",
+                "erro_balanco_pct": 5.0,
+                "total_anomalias_ativas": 0,
+                "confianca_media_deteccao": 0.45,
+                "score_operacional": "baixo_risco",
+            }
+        )
 
-        types = [c["alert_type"] for c in [call.args[0] for call in service._repo.create.call_args_list]]
-        assert "baixa_confianca_deteccao" in types
+        alert_types = [
+            call.args[0]["alert_type"] for call in service._repo.create.call_args_list
+        ]
+        assert "baixa_confianca_deteccao" in alert_types
 
-
-# ── DashboardRepository (unit) ─────────────────────────────────────────────
 
 class TestDashboardRepositoryUnit:
     def test_get_risk_ranking_sorted(self):
@@ -211,17 +244,18 @@ class TestDashboardRepositoryUnit:
             ("TR-C", "alto_risco", 28.0, 5),
             ("TR-D", "medio_risco", 15.0, 2),
         ]
-        for tid, score, erro, anomalias in data:
-            s = MagicMock()
-            s.transformer_id = tid
-            s.score_operacional = score
-            s.erro_balanco_pct = erro
-            s.total_anomalias_ativas = anomalias
-            s.kwp_total_estimado = 50.0
-            s.total_ucs_fv = 10
-            s.confianca_media_deteccao = 0.85
-            s.reference_period = "2025-05"
-            mock_snapshots.append(s)
+
+        for transformer_id, score, erro, anomalias in data:
+            snapshot = MagicMock()
+            snapshot.transformer_id = transformer_id
+            snapshot.score_operacional = score
+            snapshot.erro_balanco_pct = erro
+            snapshot.total_anomalias_ativas = anomalias
+            snapshot.kwp_total_estimado = 50.0
+            snapshot.total_ucs_fv = 10
+            snapshot.confianca_media_deteccao = 0.85
+            snapshot.reference_period = "2025-05"
+            mock_snapshots.append(snapshot)
 
         repo.list_all_latest = MagicMock(return_value=mock_snapshots)
         ranking = repo.get_risk_ranking(limit=10)
@@ -247,17 +281,17 @@ class TestDashboardRepositoryUnit:
         repo = DashboardRepository.__new__(DashboardRepository)
 
         snapshots = []
-        for i in range(3):
-            s = MagicMock()
-            s.total_ucs = 100
-            s.total_ucs_fv = 30
-            s.kwp_total_estimado = 150.0
-            s.geracao_total_kwh = 10000.0
-            s.consumo_total_kwh = 20000.0
-            s.total_anomalias_ativas = 2
-            s.score_operacional = "baixo_risco"
-            s.erro_balanco_pct = 5.0
-            snapshots.append(s)
+        for _ in range(3):
+            snapshot = MagicMock()
+            snapshot.total_ucs = 100
+            snapshot.total_ucs_fv = 30
+            snapshot.kwp_total_estimado = 150.0
+            snapshot.geracao_total_kwh = 10000.0
+            snapshot.consumo_total_kwh = 20000.0
+            snapshot.total_anomalias_ativas = 2
+            snapshot.score_operacional = "baixo_risco"
+            snapshot.erro_balanco_pct = 5.0
+            snapshots.append(snapshot)
 
         repo.list_all_latest = MagicMock(return_value=snapshots)
         kpis = repo.get_global_kpis()
@@ -268,8 +302,6 @@ class TestDashboardRepositoryUnit:
         assert kpis["total_anomalias_ativas"] == 6
         assert kpis["transformadores_criticos"] == 0
 
-
-# ── ExportService ──────────────────────────────────────────────────────────
 
 class TestExportService:
     def test_export_csv_has_header(self, mock_db: MagicMock):
@@ -364,18 +396,20 @@ class TestExportService:
         service._dash_repo = MagicMock()
         service._calib_repo = MagicMock()
 
-        service._dash_repo.get_global_kpis = MagicMock(return_value={
-            "total_transformadores": 1,
-            "total_ucs": 120,
-            "total_ucs_fv": 38,
-            "cobertura_fv_pct": 31.7,
-            "kwp_total": 195.4,
-            "geracao_total_kwh": 28800.0,
-            "consumo_total_kwh": 41200.0,
-            "erro_medio_balanco_pct": 3.7,
-            "total_anomalias_ativas": 2,
-            "transformadores_criticos": 0,
-        })
+        service._dash_repo.get_global_kpis = MagicMock(
+            return_value={
+                "total_transformadores": 1,
+                "total_ucs": 120,
+                "total_ucs_fv": 38,
+                "cobertura_fv_pct": 31.7,
+                "kwp_total": 195.4,
+                "geracao_total_kwh": 28800.0,
+                "consumo_total_kwh": 41200.0,
+                "erro_medio_balanco_pct": 3.7,
+                "total_anomalias_ativas": 2,
+                "transformadores_criticos": 0,
+            }
+        )
 
         mock_snap = MagicMock()
         mock_snap.transformer_id = "TR-102"
@@ -392,7 +426,7 @@ class TestExportService:
         mock_snap.modelo_convergido = True
         mock_snap.kwp_factor_atual = 0.150
         mock_snap.loss_factor_atual = 0.048
-        mock_snap.gerado_em = datetime.utcnow()
+        mock_snap.gerado_em = utc_now()
 
         service._dash_repo.list_all_latest = MagicMock(return_value=[mock_snap])
         service._calib_repo.get_latest = MagicMock(return_value=None)
@@ -406,11 +440,9 @@ class TestExportService:
         assert isinstance(result.calibration_summary, list)
 
 
-# ── MapResponse schema ─────────────────────────────────────────────────────
-
 class TestMapSchema:
     def test_map_response_geojson_type(self):
-        from backend.schemas.dashboard import MapResponse, MapFeature, MapFeatureProperties
+        from backend.schemas.dashboard import MapFeature, MapFeatureProperties, MapResponse
 
         feature = MapFeature(
             geometry={"type": "Point", "coordinates": [-34.941, -8.034]},
@@ -449,8 +481,6 @@ class TestMapSchema:
         assert feature.geometry is None
         assert feature.properties.transformer_id == "TR-103"
 
-
-# ── BIPayloadResponse schema ───────────────────────────────────────────────
 
 class TestBIPayloadSchema:
     def test_schema_version(self):
