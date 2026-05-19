@@ -5,12 +5,11 @@ Integra com o EnergyBalanceService via sessão independente.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 import structlog
 from celery import shared_task
 
-from backend.core.database import SyncSessionFactory
 
 logger = structlog.get_logger(__name__)
 

@@ -13,8 +13,7 @@ Rotas:
 
 from __future__ import annotations
 
-from datetime import date
-from typing import Annotated, Optional
+from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends, Query

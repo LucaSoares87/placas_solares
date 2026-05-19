@@ -5,7 +5,7 @@ Testes unitários do ClimateService com dependências mockadas.
 from __future__ import annotations
 
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -136,8 +136,6 @@ async def test_fetch_for_transformer_no_location():
 
 @pytest.mark.asyncio
 async def test_cache_hit_returns_daily():
-    from backend.schemas.climate import DailyClimateResponse
-    from datetime import datetime, timezone
 
     service = _make_service()
     service._repo.get_transformer_location = AsyncMock(

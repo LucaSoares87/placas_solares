@@ -5,7 +5,6 @@ e dispara novo batch.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 
 import structlog
 

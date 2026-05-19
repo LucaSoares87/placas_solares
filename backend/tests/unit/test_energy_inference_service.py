@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -141,7 +141,6 @@ async def test_compute_balance_aggregation():
     service._bal_repo = MagicMock()
     service._bal_repo.save = AsyncMock(return_value=saved_balance)
 
-    from datetime import datetime, timezone
 
     result = await service.compute_transformer_balance(
         transformer_id="TR-001",

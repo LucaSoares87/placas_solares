@@ -3,7 +3,6 @@ Testes de integração dos endpoints de batch.
 Utiliza AsyncClient + banco de teste em memória.
 """
 
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest

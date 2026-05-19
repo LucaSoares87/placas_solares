@@ -13,14 +13,13 @@ Responsabilidades:
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.domain.climate import (
-    ClimateSource,
     DailyClimateSummary,
     HourlyClimateData,
     aggregate_hourly_to_daily,

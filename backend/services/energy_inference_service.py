@@ -1,7 +1,7 @@
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.exceptions import ConflictException, EntityNotFoundException
+from backend.core.exceptions import EntityNotFoundException
 from backend.domain.constants import (
     CONFIDENCE_HIGH,
     CONFIDENCE_MEDIUM,

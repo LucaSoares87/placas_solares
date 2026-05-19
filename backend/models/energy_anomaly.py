@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.domain.entities import AnomalyType
 from backend.models.base import Base
 
 

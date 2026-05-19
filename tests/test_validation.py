@@ -3,12 +3,6 @@ from datetime import datetime, timezone
 
 import numpy as np
 
-from backend.schemas.validation import (
-    AnomalyDetectionRequest,
-    CalibrationRequest,
-    FeedbackRecordInput,
-    ValidationRequest,
-)
 from ml_engine.anomaly_detection.anomaly_service import (
     AnomalyDetectionService,
     EnergyFeatureVector,

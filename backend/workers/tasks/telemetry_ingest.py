@@ -12,12 +12,10 @@ Fluxo:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from typing import Any
 
 import structlog
 
-from backend.models.batch_job import BatchJob
 from backend.models.telemetry_reading import TelemetryReading
 from backend.repositories.batch_job_repository import BatchJobRepository
 from backend.repositories.telemetry_repository import TelemetryRepository

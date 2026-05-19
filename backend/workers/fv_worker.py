@@ -1,5 +1,4 @@
 import structlog
-import io
 from typing import Optional
 
 import numpy as np

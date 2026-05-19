@@ -5,7 +5,6 @@ Execute com: arq backend.core.arq_worker.WorkerSettings
 
 import structlog
 from arq.connections import RedisSettings
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.arq_settings import get_redis_settings
 from backend.core.config import settings

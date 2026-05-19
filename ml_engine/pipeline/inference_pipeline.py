@@ -5,7 +5,6 @@ import structlog
 
 from ml_engine.generation_model.predictor import (
     GenerationInput,
-    GenerationResult,
     SolarGenerationPredictor,
 )
 

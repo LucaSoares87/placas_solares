@@ -4,7 +4,7 @@ import structlog
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.v1.dependencies import CurrentUser, EngineeringRequired, FieldRequired
+from backend.api.v1.dependencies import CurrentUser, EngineeringRequired
 from backend.core.database import get_db_session
 from backend.schemas.common import APIResponse, PaginatedResponse, PaginationParams
 from backend.schemas.energy_inference import (

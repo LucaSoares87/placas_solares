@@ -1,5 +1,4 @@
 import structlog
-from dataclasses import dataclass
 import numpy as np
 from ml_engine.anomaly_detection.isolation_forest import AnomalyResult
 

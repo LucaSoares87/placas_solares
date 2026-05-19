@@ -7,8 +7,6 @@ from __future__ import annotations
 import pickle
 
 import numpy as np
-import pandas as pd
-import pytest
 from sklearn.ensemble import GradientBoostingRegressor
 
 from backend.domain.ml_model import FEATURE_NAMES, PredictionTarget

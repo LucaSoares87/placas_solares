@@ -1,4 +1,3 @@
-import pytest
 
 from backend.core.config import get_settings
 

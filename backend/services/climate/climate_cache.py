@@ -11,8 +11,6 @@ from typing import Optional
 
 import structlog
 
-from backend.core.config import settings
-from backend.domain.climate import DailyClimateSummary, HourlyClimateData
 
 logger = structlog.get_logger(__name__)
 

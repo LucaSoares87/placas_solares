@@ -6,7 +6,6 @@ Detecta inconsistências antes de persistir o resultado.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from backend.domain.energy_balance import BalanceInput
 

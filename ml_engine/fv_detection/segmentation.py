@@ -1,7 +1,6 @@
 import structlog
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-import numpy as np
 from shapely.geometry import Polygon
 from shapely.validation import make_valid
 

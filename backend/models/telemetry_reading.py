@@ -5,7 +5,7 @@ Cada linha representa um snapshot pontual de uma UC ou transformador.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, Float, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.base import Base

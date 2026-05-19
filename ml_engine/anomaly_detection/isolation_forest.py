@@ -1,6 +1,5 @@
 import structlog
 from dataclasses import dataclass, field
-from typing import Optional
 import numpy as np
 
 logger = structlog.get_logger(__name__)
