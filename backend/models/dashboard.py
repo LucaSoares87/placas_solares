@@ -1,25 +1,22 @@
-from datetime import datetime
-from sqlalchemy import (
-    Column, String, Float, Boolean, Integer,
-    DateTime, Text, Index,
-)
+from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, Column, DateTime, Float, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
+
 from backend.models.base import Base
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class DashboardSnapshot(Base):
-    """
-    Snapshot consolidado por transformador, gerado periodicamente.
-    Serve como cache materializado para o dashboard executivo,
-    evitando queries pesadas em tempo real.
-    """
     __tablename__ = "dashboard_snapshots"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     transformer_id = Column(String(64), nullable=False, index=True)
     reference_period = Column(String(32), nullable=False)
 
-    # KPIs energéticos
     total_ucs = Column(Integer, nullable=False, default=0)
     total_ucs_fv = Column(Integer, nullable=False, default=0)
     cobertura_fv_pct = Column(Float, nullable=True)
@@ -32,19 +29,16 @@ class DashboardSnapshot(Base):
     balanco_real_kwh = Column(Float, nullable=True)
     erro_balanco_pct = Column(Float, nullable=True)
 
-    # Calibração
     kwp_factor_atual = Column(Float, nullable=True)
     loss_factor_atual = Column(Float, nullable=True)
     modelo_convergido = Column(Boolean, nullable=False, default=False)
 
-    # Risco e anomalias
     score_operacional = Column(String(32), nullable=False, default="baixo_risco")
     total_anomalias_ativas = Column(Integer, nullable=False, default=0)
     total_inspecoes_pendentes = Column(Integer, nullable=False, default=0)
     confianca_media_deteccao = Column(Float, nullable=True)
 
-    # Metadados
-    gerado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    gerado_em = Column(DateTime, nullable=False, default=utc_now)
     valido_ate = Column(DateTime, nullable=True)
     snapshot_metadata = Column(JSONB, nullable=True)
 
@@ -64,10 +58,6 @@ class DashboardSnapshot(Base):
 
 
 class AlertRecord(Base):
-    """
-    Registro de alertas operacionais disparados por thresholds.
-    Permite rastreabilidade, resolução e histórico de notificações.
-    """
     __tablename__ = "alert_records"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -88,7 +78,7 @@ class AlertRecord(Base):
     resolution_notes = Column(Text, nullable=True)
 
     alert_metadata = Column(JSONB, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utc_now)
 
     __table_args__ = (
         Index("ix_alert_transformer_status", "transformer_id", "status"),

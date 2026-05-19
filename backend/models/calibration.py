@@ -1,10 +1,13 @@
-from datetime import datetime
-from sqlalchemy import (
-    Column, String, Float, Boolean, Integer,
-    DateTime, Text,
-)
+from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
+
 from backend.models.base import Base
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class CalibrationHistory(Base):
@@ -29,8 +32,8 @@ class CalibrationHistory(Base):
     notes = Column(Text, nullable=True)
     cycle_metadata = Column(JSONB, nullable=True)
 
-    executed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    executed_at = Column(DateTime, nullable=False, default=utc_now)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     def __repr__(self) -> str:
         return (

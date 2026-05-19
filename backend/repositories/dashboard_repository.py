@@ -1,21 +1,24 @@
-import structlog
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import desc, func, and_
 
-from backend.models.dashboard import DashboardSnapshot, AlertRecord
-from backend.models.validation import ValidationRecord, AnomalyRecord
+import structlog
+from sqlalchemy import and_, desc, func
+from sqlalchemy.orm import Session
+
 from backend.models.calibration import CalibrationHistory
+from backend.models.dashboard import AlertRecord, DashboardSnapshot
+from backend.models.validation import AnomalyRecord, ValidationRecord
 
 logger = structlog.get_logger(__name__)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class DashboardRepository:
     def __init__(self, db: Session):
         self._db = db
-
-    # ── Snapshots ──────────────────────────────────────────────────────────
 
     def upsert_snapshot(self, data: dict) -> DashboardSnapshot:
         existing = (
@@ -26,10 +29,12 @@ class DashboardRepository:
             )
             .first()
         )
+
         if existing:
             for key, value in data.items():
                 setattr(existing, key, value)
-            existing.gerado_em = datetime.utcnow()
+
+            existing.gerado_em = utc_now()
             self._db.commit()
             self._db.refresh(existing)
             return existing
@@ -67,7 +72,6 @@ class DashboardRepository:
         )
 
     def list_all_latest(self) -> list[DashboardSnapshot]:
-        """Retorna o snapshot mais recente de cada transformador."""
         subq = (
             self._db.query(
                 DashboardSnapshot.transformer_id,
@@ -88,14 +92,7 @@ class DashboardRepository:
             .all()
         )
 
-    # ── Ranking ───────────────────────────────────────────────────────────
-
     def get_risk_ranking(self, limit: int = 50) -> list[dict]:
-        """
-        Ranking de transformadores por criticidade operacional.
-        Ordena por: score_operacional DESC, erro_balanco_pct DESC,
-        total_anomalias_ativas DESC.
-        """
         score_order = {
             "prioridade_inspecao": 4,
             "alto_risco": 3,
@@ -128,8 +125,6 @@ class DashboardRepository:
             }
             for idx, s in enumerate(ranked[:limit])
         ]
-
-    # ── Séries temporais ──────────────────────────────────────────────────
 
     def get_error_series(
         self, transformer_id: str, limit: int = 24
@@ -180,7 +175,7 @@ class DashboardRepository:
     def get_anomaly_series(
         self, transformer_id: str, days: int = 90
     ) -> list[dict]:
-        since = datetime.utcnow() - timedelta(days=days)
+        since = utc_now() - timedelta(days=days)
         records = (
             self._db.query(AnomalyRecord)
             .filter(
@@ -203,13 +198,7 @@ class DashboardRepository:
             for r in records
         ]
 
-    # ── Mapa energético ───────────────────────────────────────────────────
-
     def get_map_data(self) -> list[dict]:
-        """
-        Retorna dados georreferenciados de todos os transformadores
-        para renderização em mapa (GeoJSON-ready).
-        """
         snapshots = self.list_all_latest()
         return [
             {
@@ -228,8 +217,6 @@ class DashboardRepository:
             }
             for s in snapshots
         ]
-
-    # ── KPIs globais ──────────────────────────────────────────────────────
 
     def get_global_kpis(self) -> dict:
         snapshots = self.list_all_latest()
@@ -255,11 +242,16 @@ class DashboardRepository:
         consumo = sum(s.consumo_total_kwh or 0.0 for s in snapshots)
         anomalias = sum(s.total_anomalias_ativas or 0 for s in snapshots)
         criticos = sum(
-            1 for s in snapshots
+            1
+            for s in snapshots
             if s.score_operacional in ("alto_risco", "prioridade_inspecao")
         )
 
-        erros = [s.erro_balanco_pct for s in snapshots if s.erro_balanco_pct is not None]
+        erros = [
+            s.erro_balanco_pct
+            for s in snapshots
+            if s.erro_balanco_pct is not None
+        ]
         erro_medio = round(sum(erros) / len(erros), 2) if erros else 0.0
         cobertura = round(total_fv / total_ucs * 100, 1) if total_ucs > 0 else 0.0
 
@@ -300,9 +292,7 @@ class AlertRepository:
         severity: Optional[str] = None,
         limit: int = 100,
     ) -> list[AlertRecord]:
-        q = self._db.query(AlertRecord).filter(
-            AlertRecord.status == "aberto"
-        )
+        q = self._db.query(AlertRecord).filter(AlertRecord.status == "aberto")
         if transformer_id:
             q = q.filter(AlertRecord.transformer_id == transformer_id)
         if severity:
@@ -319,9 +309,11 @@ class AlertRepository:
         ).first()
         if not record:
             return None
+
         record.status = "reconhecido"
         record.acknowledged_by = acknowledged_by
-        record.acknowledged_at = datetime.utcnow()
+        record.acknowledged_at = utc_now()
+
         self._db.commit()
         self._db.refresh(record)
         return record
@@ -336,9 +328,11 @@ class AlertRepository:
         ).first()
         if not record:
             return None
+
         record.status = "resolvido"
-        record.resolved_at = datetime.utcnow()
+        record.resolved_at = utc_now()
         record.resolution_notes = notes
+
         self._db.commit()
         self._db.refresh(record)
         return record

@@ -1,11 +1,17 @@
-import structlog
+from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
 
-from backend.models.validation import ValidationRecord, AnomalyRecord
+import structlog
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
+from backend.models.validation import AnomalyRecord, ValidationRecord
 
 logger = structlog.get_logger(__name__)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class ValidationRepository:
@@ -61,9 +67,11 @@ class ValidationRepository:
         )
         if not record:
             return None
+
         record.status_validacao = status
         if observacoes:
             record.observacoes = observacoes
+
         self._db.commit()
         self._db.refresh(record)
         return record
@@ -113,8 +121,6 @@ class AnomalyRepository:
         resolved_by: str,
         notes: Optional[str] = None,
     ) -> Optional[AnomalyRecord]:
-        from datetime import datetime
-
         record = (
             self._db.query(AnomalyRecord)
             .filter(AnomalyRecord.id == record_id)
@@ -123,9 +129,10 @@ class AnomalyRepository:
         if not record:
             return None
 
-        record.resolved_at = datetime.utcnow()
+        record.resolved_at = utc_now()
         record.resolved_by = resolved_by
         record.resolution_notes = notes
+
         self._db.commit()
         self._db.refresh(record)
         return record

@@ -1,17 +1,21 @@
-import structlog
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from ml_engine.calibration.kwp_calibrator import KWpCalibrator, CalibrationSample
+import structlog
+
+from ml_engine.calibration.kwp_calibrator import CalibrationSample, KWpCalibrator
 from ml_engine.calibration.loss_calibrator import LossCalibrator, LossSample
 from ml_engine.continuous_learning.feedback_collector import (
     FeedbackCollector,
     FeedbackRecord,
-    FeedbackSummary,
 )
 
 logger = structlog.get_logger(__name__)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 @dataclass
@@ -30,16 +34,6 @@ class UpdateCycle:
 
 
 class ModelUpdater:
-    """
-    Coordena o ciclo completo de aprendizado contínuo por transformador:
-
-    1. Recebe feedback de UCs telemedidas
-    2. Atualiza fator kWp via KWpCalibrator
-    3. Atualiza fator de perdas via LossCalibrator
-    4. Registra histórico do ciclo de atualização
-    5. Avalia convergência do sistema
-    """
-
     def __init__(
         self,
         kwp_calibrator: KWpCalibrator,
@@ -91,7 +85,7 @@ class ModelUpdater:
 
         cycle = UpdateCycle(
             transformer_id=transformer_id,
-            executed_at=datetime.utcnow(),
+            executed_at=utc_now(),
             kwp_factor_old=old_kwp,
             kwp_factor_new=kwp_result.new_factor if kwp_result else old_kwp,
             loss_factor_old=old_loss,
@@ -118,15 +112,15 @@ class ModelUpdater:
     def _feed_kwp_calibrator(
         self, transformer_id: str, records: list[FeedbackRecord]
     ) -> None:
-        for r in records:
-            if r.kwp_real and r.area_m2 > 0:
+        for record in records:
+            if record.kwp_real and record.area_m2 > 0:
                 self._kwp_calibrator.add_sample(
                     CalibrationSample(
                         transformer_id=transformer_id,
-                        uc_code=r.uc_code,
-                        area_m2=r.area_m2,
-                        kwp_estimated=r.kwp_estimated,
-                        kwp_real=r.kwp_real,
+                        uc_code=record.uc_code,
+                        area_m2=record.area_m2,
+                        kwp_estimated=record.kwp_estimated,
+                        kwp_real=record.kwp_real,
                     )
                 )
 
@@ -148,7 +142,11 @@ class ModelUpdater:
 
     def get_cycles(self, transformer_id: Optional[str] = None) -> list[UpdateCycle]:
         if transformer_id:
-            return [c for c in self._cycles if c.transformer_id == transformer_id]
+            return [
+                cycle
+                for cycle in self._cycles
+                if cycle.transformer_id == transformer_id
+            ]
         return list(self._cycles)
 
     @property

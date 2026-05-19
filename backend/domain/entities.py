@@ -1,7 +1,11 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class UserProfile(str, Enum):
@@ -20,7 +24,6 @@ class UCProfile(str, Enum):
 
 
 class EnergyStatus(str, Enum):
-    """Status da inferência energética da UC."""
     NORMAL = "normal"
     GENERATION_DETECTED = "generation_detected"
     INJECTION_DETECTED = "injection_detected"
@@ -29,8 +32,8 @@ class EnergyStatus(str, Enum):
     NO_DATA = "no_data"
     ANOMALY = "anomaly"
 
+
 class RiskScore(str, Enum):
-    """Nível de risco operacional do transformador ou UC."""
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -38,16 +41,14 @@ class RiskScore(str, Enum):
 
 
 class InferenceMethod(str, Enum):
-    """Método utilizado para inferência energética."""
-    TELEMETRY = "telemetry"           # Dados telemetrados diretos
-    SATELLITE = "satellite"           # Análise de imagem de satélite
-    STATISTICAL = "statistical"       # Modelo estatístico por perfil
-    HYBRID = "hybrid"                 # Combinação de métodos
-    DEFAULT = "default"               # Valores padrão por perfil
+    TELEMETRY = "telemetry"
+    SATELLITE = "satellite"
+    STATISTICAL = "statistical"
+    HYBRID = "hybrid"
+    DEFAULT = "default"
 
 
 class BalanceStatus(str, Enum):
-    """Status do balanço energético do transformador."""
     BALANCED = "balanced"
     UNDER_GENERATED = "under_generated"
     OVER_INJECTED = "over_injected"
@@ -57,13 +58,13 @@ class BalanceStatus(str, Enum):
 
 
 class AnomalyType(str, Enum):
-    """Tipos de anomalia detectados na inferência."""
     NEGATIVE_CONSUMPTION = "negative_consumption"
     EXCESS_INJECTION = "excess_injection"
     IMPLAUSIBLE_GENERATION = "implausible_generation"
     METER_REVERSAL = "meter_reversal"
     SUDDEN_SPIKE = "sudden_spike"
     CONSISTENT_ZERO = "consistent_zero"
+
 
 @dataclass
 class ConsumerUnit:
@@ -78,7 +79,7 @@ class ConsumerUnit:
     inverter_model: Optional[str] = None
     panel_count: Optional[int] = None
     address: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utc_now)
 
 
 @dataclass
@@ -109,7 +110,7 @@ class EnergyInferenceResult:
     confidence: float
     transformer_id: str
     operational_score: RiskScore
-    computed_at: datetime = field(default_factory=datetime.utcnow)
+    computed_at: datetime = field(default_factory=utc_now)
 
 
 @dataclass

@@ -1,10 +1,13 @@
-from datetime import datetime
-from sqlalchemy import (
-    Column, String, Float, Boolean, Integer,
-    DateTime, Text, ForeignKey, Index,
-)
+from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, Column, DateTime, Float, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
+
 from backend.models.base import Base
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class ValidationRecord(Base):
@@ -33,11 +36,11 @@ class ValidationRecord(Base):
     observacoes = Column(Text, nullable=True)
     metadata_json = Column(JSONB, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utc_now,
+        onupdate=utc_now,
         nullable=False,
     )
 
@@ -67,7 +70,7 @@ class AnomalyRecord(Base):
     recommendation = Column(String(64), nullable=True)
 
     features_json = Column(JSONB, nullable=True)
-    detected_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    detected_at = Column(DateTime, default=utc_now, nullable=False)
     resolved_at = Column(DateTime, nullable=True)
     resolved_by = Column(String(64), nullable=True)
     resolution_notes = Column(Text, nullable=True)

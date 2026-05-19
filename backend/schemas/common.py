@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Generic, Optional, TypeVar
 
 from pydantic import BaseModel, Field
@@ -6,11 +6,15 @@ from pydantic import BaseModel, Field
 T = TypeVar("T")
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class APIResponse(BaseModel, Generic[T]):
     success: bool = True
     data: Optional[T] = None
     message: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
 
 
 class PaginatedResponse(BaseModel, Generic[T]):
@@ -20,25 +24,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
     page: int
     page_size: int
     pages: int
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-
-class ErrorResponse(BaseModel):
-    success: bool = False
-    error: str
-    code: str
-    details: Optional[dict[str, Any]] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-
-class PaginationParams(BaseModel):
-    page: int = Field(default=1, ge=1)
-    page_size: int = Field(default=20, ge=1, le=100)
-
-    @property
-    def offset(self) -> int:
-        return (self.page - 1) * self.page_size
-
+    timestamp: datetime = Field(default_factory=utc_now)
 
 
 class ErrorDetail(BaseModel):
@@ -50,3 +36,15 @@ class ErrorDetail(BaseModel):
 class ErrorResponse(BaseModel):
     success: bool = False
     error: ErrorDetail
+    code: Optional[str] = None
+    details: Optional[dict[str, Any]] = None
+    timestamp: datetime = Field(default_factory=utc_now)
+
+
+class PaginationParams(BaseModel):
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=100)
+
+    @property
+    def offset(self) -> int:
+        return (self.page - 1) * self.page_size
