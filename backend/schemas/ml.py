@@ -1,13 +1,9 @@
-"""
-Schemas Pydantic para o módulo ML.
-"""
-
 from __future__ import annotations
 
 from datetime import date
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.domain.ml_model import (
     DataSplitStrategy,
@@ -16,11 +12,9 @@ from backend.domain.ml_model import (
 )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Requests
-# ─────────────────────────────────────────────────────────────────────────────
-
 class TrainRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     model_type: ModelType = ModelType.GRADIENT_BOOSTING
     target: PredictionTarget = PredictionTarget.ENERGY_LOSS_PCT
     transformer_ids: Optional[list[str]] = None
@@ -46,11 +40,9 @@ class BatchPredictRequest(BaseModel):
     target: PredictionTarget = PredictionTarget.ENERGY_LOSS_PCT
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Responses
-# ─────────────────────────────────────────────────────────────────────────────
-
 class TrainResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
     version: str
     status: str
     model_type: str
@@ -59,10 +51,10 @@ class TrainResponse(BaseModel):
     metrics: dict
     n_samples: int
 
-    model_config = {"from_attributes": True}
-
 
 class PredictionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
     transformer_id: str
     ref_date: str
     target: str
@@ -74,10 +66,10 @@ class PredictionResponse(BaseModel):
     is_anomaly: bool
     anomaly_score: float
 
-    model_config = {"from_attributes": True}
-
 
 class BatchPredictionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     ref_date: str
     target: str
     total: int
@@ -87,20 +79,20 @@ class BatchPredictionResponse(BaseModel):
     predictions: list[PredictionResponse]
     errors: list[dict]
 
-    model_config = {"from_attributes": True}
-
 
 class ModelVersionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
     version: str
     model_type: str
     status: str
     metrics: dict
     created_at: str
 
-    model_config = {"from_attributes": True}
-
 
 class AnomalyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
     transformer_id: str
     ref_date: str
     target: str
@@ -108,5 +100,3 @@ class AnomalyResponse(BaseModel):
     actual_value: Optional[float]
     anomaly_score: float
     model_version: str
-
-    model_config = {"from_attributes": True}

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 class BatchJobResponse(BaseModel):
@@ -39,7 +39,9 @@ class EnqueueBatchRequest(BaseModel):
     period_start: datetime
     period_end: datetime
 
-    model_config = {"json_encoders": {datetime: lambda v: v.isoformat()}}
+    @field_serializer("period_start", "period_end")
+    def serialize_datetime(self, value: datetime) -> str:
+        return value.isoformat()
 
 
 class EnqueueTelemetryRequest(BaseModel):
