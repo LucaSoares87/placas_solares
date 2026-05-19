@@ -22,6 +22,7 @@ alembic = "^1.13.0"
 
 redis = { extras = ["hiredis"], version = "^5.0.4" }
 celery = { extras = ["redis"], version = "^5.4.0" }
+arq = "^0.28.0"
 flower = "^2.0.1"
 
 structlog = "^24.2.0"
