@@ -3,6 +3,7 @@ Endpoints de controle do pipeline de processamento em lote.
 Permite disparar jobs, consultar status e solicitar reprocessamentos.
 """
 
+import math
 from typing import Annotated
 from uuid import uuid4
 
@@ -35,10 +36,6 @@ logger = structlog.get_logger(__name__)
 async def enqueue_batch_inference(
     body: EnqueueBatchRequest,
 ):
-    """
-    Enfileira um job de inferência em lote para todas as UCs de um transformador.
-    Deduplicado por (transformer_id + period_start).
-    """
     job_id = f"batch:{body.transformer_id}:{body.period_start.isoformat()}"
 
     enqueued = await enqueue(
@@ -67,9 +64,6 @@ async def enqueue_batch_inference(
     dependencies=[EngineeringRequired],
 )
 async def enqueue_telemetry_ingest(body: EnqueueTelemetryRequest):
-    """
-    Enfileira ingestão de leituras telemetradas em massa.
-    """
     job_id = f"telemetry:{uuid4().hex}"
 
     enqueued = await enqueue(
@@ -81,8 +75,16 @@ async def enqueue_telemetry_ingest(body: EnqueueTelemetryRequest):
     )
 
     return APIResponse(
-        data={"job_id": job_id, "total_payloads": len(body.payloads)},
-        message="Ingestão de telemetria enfileirada.",
+        data={
+            "job_id": job_id,
+            "total_payloads": len(body.payloads),
+            "enqueued": enqueued is not None,
+        },
+        message=(
+            "Ingestão de telemetria enfileirada."
+            if enqueued
+            else "Job de telemetria já existe na fila."
+        ),
     )
 
 
@@ -92,9 +94,6 @@ async def enqueue_telemetry_ingest(body: EnqueueTelemetryRequest):
     dependencies=[EngineeringRequired],
 )
 async def enqueue_reprocess(body: EnqueueReprocessRequest):
-    """
-    Solicita reprocessamento do balanço de um transformador.
-    """
     job_id = f"reprocess:{body.transformer_id}:{uuid4().hex[:8]}"
 
     enqueued = await enqueue(
@@ -109,7 +108,11 @@ async def enqueue_reprocess(body: EnqueueReprocessRequest):
 
     return APIResponse(
         data={"job_id": job_id, "enqueued": enqueued is not None},
-        message="Reprocessamento enfileirado.",
+        message=(
+            "Reprocessamento enfileirado."
+            if enqueued
+            else "Job de reprocessamento já existe na fila."
+        ),
     )
 
 
@@ -121,7 +124,6 @@ async def get_job_status_endpoint(
     job_id: str = Path(...),
     _: CurrentUser = None,
 ):
-    """Consulta o status de um job diretamente no Redis (ARQ)."""
     status = await get_job_status(job_id)
     return APIResponse(data=BatchJobStatusResponse(**status))
 
@@ -133,12 +135,14 @@ async def get_job_status_endpoint(
 async def list_batch_jobs(
     _: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    status: str | None = Query(None, description="Filtrar por status: pending | running | success | failed"),
+    status: str | None = Query(
+        None,
+        description="Filtrar por status: pending | running | success | failed",
+    ),
     transformer_id: str | None = Query(None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ):
-    """Lista jobs persistidos no banco com suporte a filtros."""
     repo = BatchJobRepository(session)
     offset = (page - 1) * page_size
 
@@ -150,14 +154,13 @@ async def list_batch_jobs(
         items = await repo.list_all(offset, page_size)
 
     total = await repo.count_all()
-    import math
 
     return PaginatedResponse(
-        data=[BatchJobResponse.model_validate(i) for i in items],
+        data=[BatchJobResponse.model_validate(item) for item in items],
         total=total,
         page=page,
         page_size=page_size,
-        pages=math.ceil(total / page_size),
+        pages=math.ceil(total / page_size) if total else 1,
     )
 
 
@@ -172,15 +175,13 @@ async def list_jobs_by_transformer(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ):
-    """Lista jobs de um transformador específico."""
-    import math
     repo = BatchJobRepository(session)
     offset = (page - 1) * page_size
     items = await repo.list_by_transformer(transformer_id, offset, page_size)
     total = len(items)
 
     return PaginatedResponse(
-        data=[BatchJobResponse.model_validate(i) for i in items],
+        data=[BatchJobResponse.model_validate(item) for item in items],
         total=total,
         page=page,
         page_size=page_size,

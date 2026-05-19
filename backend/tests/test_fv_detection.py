@@ -1,12 +1,12 @@
 import pytest
 import numpy as np
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock
 from pathlib import Path
 
 from ml_engine.fv_detection.detector import FVDetector, DetectionResult
 from ml_engine.fv_detection.segmentation import SegmentationProcessor, SegmentedPanel
 from ml_engine.fv_detection.pixel_to_area import PixelToAreaConverter, GeoReferenceParams
-from ml_engine.fv_detection.kwp_estimator import KWpEstimator, KWpResult
+from ml_engine.fv_detection.kwp_estimator import KWpEstimator
 from data_pipeline.datasets.cvat_converter import CVATConverter
 from backend.schemas.fv_detection import (
     FVDetectionRequest,
@@ -16,10 +16,6 @@ from backend.schemas.fv_detection import (
 )
 from backend.services.fv_detection_service import FVDetectionService
 
-
-# ──────────────────────────────────────────────
-# Fixtures
-# ──────────────────────────────────────────────
 
 @pytest.fixture
 def dummy_image() -> np.ndarray:
@@ -73,10 +69,6 @@ def detection_empty() -> DetectionResult:
     )
 
 
-# ──────────────────────────────────────────────
-# FVDetector
-# ──────────────────────────────────────────────
-
 class TestFVDetector:
     def test_aggregate_confidence_empty(self):
         detector = FVDetector.__new__(FVDetector)
@@ -100,10 +92,6 @@ class TestFVDetector:
             detector._load_model()
 
 
-# ──────────────────────────────────────────────
-# SegmentationProcessor
-# ──────────────────────────────────────────────
-
 class TestSegmentationProcessor:
     def setup_method(self):
         self.processor = SegmentationProcessor()
@@ -114,7 +102,10 @@ class TestSegmentationProcessor:
             "confidence": 0.87,
             "bbox_xyxy": [0, 0, 100, 100],
             "mask_polygon": [
-                [0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]
+                [0.0, 0.0],
+                [100.0, 0.0],
+                [100.0, 100.0],
+                [0.0, 100.0],
             ],
         }
         panels = self.processor.process([detection])
@@ -143,6 +134,7 @@ class TestSegmentationProcessor:
 
     def test_total_area_pixels(self):
         from shapely.geometry import Polygon as ShapelyPolygon
+
         panels = [
             SegmentedPanel(
                 polygon=ShapelyPolygon(),
@@ -164,10 +156,6 @@ class TestSegmentationProcessor:
         total = self.processor.total_area_pixels(panels)
         assert total == 3000.0
 
-
-# ──────────────────────────────────────────────
-# PixelToAreaConverter
-# ──────────────────────────────────────────────
 
 class TestPixelToAreaConverter:
     def test_gsd_direct_conversion(self):
@@ -194,7 +182,8 @@ class TestPixelToAreaConverter:
     def test_perspective_correction_applied(self):
         params_no_correction = GeoReferenceParams(gsd_m_per_pixel=0.10)
         params_with_correction = GeoReferenceParams(
-            gsd_m_per_pixel=0.10, perspective_correction=0.9
+            gsd_m_per_pixel=0.10,
+            perspective_correction=0.9,
         )
         c1 = PixelToAreaConverter(params_no_correction)
         c2 = PixelToAreaConverter(params_with_correction)
@@ -214,10 +203,6 @@ class TestPixelToAreaConverter:
         assert len(results) == 3
         assert results[1] > results[0]
 
-
-# ──────────────────────────────────────────────
-# KWpEstimator
-# ──────────────────────────────────────────────
 
 class TestKWpEstimator:
     def test_default_factor_used(self):
@@ -270,13 +255,11 @@ class TestKWpEstimator:
         assert result.factor_used == 0.20
 
 
-# ──────────────────────────────────────────────
-# FVDetectionService
-# ──────────────────────────────────────────────
-
 class TestFVDetectionService:
     def test_empty_result_when_no_fv(
-        self, base_request: FVDetectionRequest, dummy_image: np.ndarray
+        self,
+        base_request: FVDetectionRequest,
+        dummy_image: np.ndarray,
     ):
         service = FVDetectionService.__new__(FVDetectionService)
         service._detector = MagicMock()
@@ -328,10 +311,6 @@ class TestFVDetectionService:
         assert score == OperationalScore.INSPECTION_PRIORITY
 
 
-# ──────────────────────────────────────────────
-# CVATConverter
-# ──────────────────────────────────────────────
-
 class TestCVATConverter:
     MINIMAL_CVAT_XML = """<?xml version="1.0" encoding="utf-8"?>
 <annotations>
@@ -362,7 +341,7 @@ class TestCVATConverter:
         converter = CVATConverter()
         labels = converter._parse_xml(xml_file)
 
-        names = [l.image_name for l in labels]
+        names = [label.image_name for label in labels]
         assert "img_002.jpg" not in names
 
     def test_full_conversion_writes_labels(self, tmp_path: Path):

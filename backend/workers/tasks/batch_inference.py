@@ -5,9 +5,9 @@ Fluxo:
   1. Busca todas as UCs do transformador.
   2. Divide em chunks de BATCH_CHUNK_SIZE.
   3. Para cada UC:
-     a. Verifica se há leitura telemetrada recente → usa dados reais.
-     b. Caso contrário → usa inferência por perfil (estatística).
-  4. Após processar todas as UCs → computa balanço do transformador.
+     a. Verifica se há leitura telemetrada recente e usa dados reais.
+     b. Caso contrário, usa inferência por perfil.
+  4. Após processar todas as UCs, computa balanço do transformador.
   5. Detecta anomalias no balanço.
   6. Registra resultado no BatchJob.
 """
@@ -15,13 +15,13 @@ Fluxo:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any
 
 import structlog
 
 from backend.core.config import settings
-from backend.domain.constants import CONFIDENCE_HIGH, CONFIDENCE_MEDIUM
+from backend.domain.constants import CONFIDENCE_HIGH
 from backend.domain.entities import (
     EnergyStatus,
     InferenceMethod,
@@ -35,8 +35,8 @@ from backend.repositories.telemetry_repository import TelemetryRepository
 from backend.repositories.transformer_repository import TransformerRepository
 from backend.schemas.energy_inference import EnergyInferenceCreate
 from backend.services.energy_inference_service import EnergyInferenceService
-from backend.worker.context import db_session
 from backend.worker.anomaly_detector import AnomalyDetector
+from backend.worker.context import db_session
 
 logger = structlog.get_logger(__name__)
 
@@ -50,17 +50,6 @@ async def run_batch_inference_for_transformer(
     period_start: str,
     period_end: str,
 ) -> dict[str, Any]:
-    """
-    ARQ task — processa inferências de todas as UCs de um transformador.
-
-    Args:
-        ctx: contexto ARQ.
-        job_id: ID rastreável do job.
-        transformer_id: ID do transformador a processar.
-        measured_kwh: energia medida no medidor do transformador (kWh).
-        period_start: ISO string do início do período.
-        period_end: ISO string do fim do período.
-    """
     log = logger.bind(job_id=job_id, transformer_id=transformer_id)
     log.info("batch_inference.started")
 
@@ -76,7 +65,6 @@ async def run_batch_inference_for_transformer(
         inf_service = EnergyInferenceService(session)
         anomaly_detector = AnomalyDetector(session)
 
-        # Valida transformador
         transformer = await tr_repo.get_by_transformer_id(transformer_id)
         if not transformer:
             log.error("batch_inference.transformer_not_found")
@@ -97,7 +85,6 @@ async def run_batch_inference_for_transformer(
         failed = 0
         telemetered_count = 0
 
-        # ── Processamento por chunks ──────────────────────────────────────────
         chunk_size = settings.BATCH_CHUNK_SIZE
 
         for chunk_start in range(0, total, chunk_size):
@@ -128,7 +115,6 @@ async def run_batch_inference_for_transformer(
                     if result.get("method") == InferenceMethod.TELEMETRY:
                         telemetered_count += 1
 
-        # ── Balanço do transformador ─────────────────────────────────────────
         balance = None
         try:
             balance = await inf_service.compute_transformer_balance(
@@ -145,7 +131,6 @@ async def run_batch_inference_for_transformer(
         except Exception as exc:
             log.error("batch_inference.balance_error", error=str(exc))
 
-        # ── Detecção de anomalias ────────────────────────────────────────────
         anomalies_detected = 0
         if balance:
             try:
@@ -186,16 +171,12 @@ async def _process_single_uc(
     inf_repo: EnergyInferenceRepository,
     inf_service: EnergyInferenceService,
 ) -> dict:
-    """Processa a inferência de uma única UC."""
-
-    # Tenta usar dados telemetrados recentes
     if uc.is_telemetered:
         reading = await tel_repo.get_latest_by_source(uc.uc_code, source_type="uc")
         if reading and reading.measured_at >= p_start:
-            inference = await _build_telemetry_inference(uc, reading, inf_service)
+            await _build_telemetry_inference(uc, reading, inf_service)
             return {"uc_code": uc.uc_code, "method": InferenceMethod.TELEMETRY}
 
-    # Fallback: inferência por perfil estatístico
     await inf_service.infer_from_profile(uc.uc_code)
     return {"uc_code": uc.uc_code, "method": InferenceMethod.STATISTICAL}
 
@@ -205,9 +186,8 @@ async def _build_telemetry_inference(
     reading: Any,
     inf_service: EnergyInferenceService,
 ) -> EnergyInference:
-    """Constrói e registra inferência a partir de leitura telemetrada."""
     kw = reading.active_power_kw or 0.0
-    export_kw = (reading.energy_kwh_export or 0.0)
+    export_kw = reading.energy_kwh_export or 0.0
 
     has_fv = uc.has_gd
     kwp = uc.gd_installed_kwp or 0.0
@@ -219,7 +199,7 @@ async def _build_telemetry_inference(
     if has_fv and export_kw > 0:
         generation_kw = round(export_kw, 4)
         injection_min = round(export_kw * 0.8, 4)
-        injection_max = round(export_kw * 1.0, 4)
+        injection_max = round(export_kw, 4)
         status = EnergyStatus.INJECTION_DETECTED
 
     payload = EnergyInferenceCreate(
