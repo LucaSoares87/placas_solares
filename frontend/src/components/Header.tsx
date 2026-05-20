@@ -1,3 +1,6 @@
+import { useNavigate } from "react-router-dom";
+
+import { useAuth } from "../hooks/useAuth";
 import { useHealth } from "../hooks/useHealth";
 
 function getStatusLabel(isLoading: boolean, isError: boolean, status?: string) {
@@ -29,7 +32,16 @@ function getStatusClass(isLoading: boolean, isError: boolean) {
 }
 
 export default function Header() {
+  const navigate = useNavigate();
   const { data, isError, isLoading } = useHealth();
+  const { authenticated, user, signOut } = useAuth();
+
+  function handleLogout() {
+    signOut();
+    navigate("/login", { replace: true });
+  }
+
+  const userLabel = user?.nome ?? user?.name ?? user?.matricula ?? "Usuário autenticado";
 
   return (
     <header className="header">
@@ -38,8 +50,18 @@ export default function Header() {
         <span>Inferência FV, balanço energético e risco operacional</span>
       </div>
 
-      <div className={getStatusClass(isLoading, isError)}>
-        {getStatusLabel(isLoading, isError, data?.status)}
+      <div className="header-actions">
+        {authenticated ? <span className="user-chip">{userLabel}</span> : null}
+
+        <div className={getStatusClass(isLoading, isError)}>
+          {getStatusLabel(isLoading, isError, data?.status)}
+        </div>
+
+        {authenticated ? (
+          <button className="button button-secondary button-compact" onClick={handleLogout}>
+            Sair
+          </button>
+        ) : null}
       </div>
     </header>
   );
