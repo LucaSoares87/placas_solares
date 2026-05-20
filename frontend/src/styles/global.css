@@ -771,3 +771,21 @@ textarea {
     text-align: left;
   }
 }
+
+.header-status-online {
+  color: #86efac;
+  background: rgba(22, 163, 74, 0.14);
+  border: 1px solid rgba(34, 197, 94, 0.24);
+}
+
+.header-status-offline {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(248, 113, 113, 0.24);
+}
+
+.header-status-checking {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(251, 191, 36, 0.24);
+}
