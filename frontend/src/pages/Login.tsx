@@ -1,18 +1,32 @@
 export default function Login() {
   return (
-    <div className="content">
-      <div className="page-header">
+    <main className="login-page">
+      <section className="login-panel">
         <div>
-          <h2>Login</h2>
-          <p>Autenticação será conectada ao backend no ato de integração.</p>
+          <span className="eyebrow">Acesso seguro</span>
+          <h1>Energy Inference Platform</h1>
+          <p>
+            Plataforma analítica para inferência energética, validação
+            operacional e priorização de inspeções em redes de distribuição.
+          </p>
         </div>
-      </div>
 
-      <article className="card">
-        <div className="placeholder">
-          Formulário de login será implementado no ATO 2.3.
-        </div>
-      </article>
-    </div>
+        <form className="login-form">
+          <label>
+            E-mail
+            <input type="email" placeholder="usuario@empresa.com" />
+          </label>
+
+          <label>
+            Senha
+            <input type="password" placeholder="Digite sua senha" />
+          </label>
+
+          <button className="button button-primary" type="button">
+            Entrar
+          </button>
+        </form>
+      </section>
+    </main>
   );
 }
