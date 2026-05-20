@@ -3,8 +3,41 @@ import GenerationChart from "../components/GenerationChart";
 import HealthStatus from "../components/HealthStatus";
 import KpiCard from "../components/KpiCard";
 import RankingTable from "../components/RankingTable";
+import { useDashboardKpis } from "../hooks/useDashboard";
+
+const integerFormatter = new Intl.NumberFormat("pt-BR");
+
+function formatInteger(value: number) {
+  return integerFormatter.format(Math.round(value));
+}
+
+function formatPercent(value: number) {
+  return `${(value * 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1
+  })}%`;
+}
+
+function formatKwh(value: number) {
+  if (value >= 1000) {
+    return `${(value / 1000).toLocaleString("pt-BR", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1
+    })} MWh`;
+  }
+
+  return `${formatInteger(value)} kWh`;
+}
 
 export default function Dashboard() {
+  const { kpis, isLoading, isUsingFallback, isError } = useDashboardKpis();
+
+  const dataBadge = isLoading
+    ? "Carregando KPIs"
+    : isUsingFallback
+      ? "Dados demonstrativos"
+      : "Dados reais";
+
   return (
     <div>
       <div className="page-header">
@@ -18,16 +51,39 @@ export default function Dashboard() {
         </div>
 
         <div className="page-actions">
+          <span
+            className={
+              isError ? "badge badge-warning" : "badge badge-info"
+            }
+          >
+            {dataBadge}
+          </span>
           <button className="button button-secondary">Exportar CSV</button>
           <button className="button button-primary">Atualizar painel</button>
         </div>
       </div>
 
       <section className="kpi-grid">
-        <KpiCard label="Transformadores" value="128" trend="base monitorada" />
-        <KpiCard label="UCs analisadas" value="18.420" trend="ciclo atual" />
-        <KpiCard label="Cobertura FV" value="21,4%" trend="+2,1 p.p." />
-        <KpiCard label="Erro médio" value="8,6%" trend="meta operacional: ±10%" />
+        <KpiCard
+          label="Transformadores"
+          value={formatInteger(kpis.totalTransformers)}
+          trend={`${formatInteger(kpis.criticalTransformers)} críticos`}
+        />
+        <KpiCard
+          label="UCs analisadas"
+          value={formatInteger(kpis.totalConsumerUnits)}
+          trend={`${formatInteger(kpis.totalGdUnits)} com GD`}
+        />
+        <KpiCard
+          label="Cobertura FV"
+          value={formatPercent(kpis.gdPenetrationRate)}
+          trend={`Telemetria: ${formatPercent(kpis.telemetryCoverageRate)}`}
+        />
+        <KpiCard
+          label="Geração estimada"
+          value={formatKwh(kpis.estimatedGenerationKwh)}
+          trend={`Consumo: ${formatKwh(kpis.estimatedConsumptionKwh)}`}
+        />
       </section>
 
       <section className="dashboard-grid dashboard-grid-main">
