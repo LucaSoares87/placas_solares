@@ -42,36 +42,80 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
+        if_not_exists=True,
     )
 
-    op.create_index("ix_climate_records_latitude", "climate_records", ["latitude"])
-    op.create_index("ix_climate_records_longitude", "climate_records", ["longitude"])
-    op.create_index("ix_climate_records_ref_date", "climate_records", ["ref_date"])
+    op.create_index(
+        "ix_climate_records_latitude",
+        "climate_records",
+        ["latitude"],
+        if_not_exists=True,
+    )
+    op.create_index(
+        "ix_climate_records_longitude",
+        "climate_records",
+        ["longitude"],
+        if_not_exists=True,
+    )
+    op.create_index(
+        "ix_climate_records_ref_date",
+        "climate_records",
+        ["ref_date"],
+        if_not_exists=True,
+    )
+
     op.create_unique_constraint(
         "uq_climate_records_location_date",
         "climate_records",
         ["latitude", "longitude", "ref_date"],
     )
 
-    # Ativar o climate_correction_factor no transformer_balances (coluna já criada no Ato 5)
-    # Adicionar índice para facilitar joins no Ato 7
     op.create_index(
         "ix_transformer_balances_balance_status",
         "transformer_balances",
         ["balance_status"],
+        if_not_exists=True,
     )
     op.create_index(
         "ix_transformer_balances_operational_score",
         "transformer_balances",
         ["operational_score"],
+        if_not_exists=True,
     )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_transformer_balances_operational_score", "transformer_balances")
-    op.drop_index("ix_transformer_balances_balance_status", "transformer_balances")
-    op.drop_constraint("uq_climate_records_location_date", "climate_records")
-    op.drop_index("ix_climate_records_ref_date", "climate_records")
-    op.drop_index("ix_climate_records_longitude", "climate_records")
-    op.drop_index("ix_climate_records_latitude", "climate_records")
-    op.drop_table("climate_records")
+    op.drop_index(
+        "ix_transformer_balances_operational_score",
+        table_name="transformer_balances",
+        if_exists=True,
+    )
+    op.drop_index(
+        "ix_transformer_balances_balance_status",
+        table_name="transformer_balances",
+        if_exists=True,
+    )
+
+    op.drop_constraint(
+        "uq_climate_records_location_date",
+        "climate_records",
+        type_="unique",
+    )
+
+    op.drop_index(
+        "ix_climate_records_ref_date",
+        table_name="climate_records",
+        if_exists=True,
+    )
+    op.drop_index(
+        "ix_climate_records_longitude",
+        table_name="climate_records",
+        if_exists=True,
+    )
+    op.drop_index(
+        "ix_climate_records_latitude",
+        table_name="climate_records",
+        if_exists=True,
+    )
+
+    op.drop_table("climate_records", if_exists=True)

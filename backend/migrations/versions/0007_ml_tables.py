@@ -19,7 +19,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ── ml_model_records ──────────────────────────────────────────────────────
     op.create_table(
         "ml_model_records",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -34,11 +33,22 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("version", name="uq_ml_model_records_version"),
+        if_not_exists=True,
     )
-    op.create_index("ix_ml_model_records_target", "ml_model_records", ["target"])
-    op.create_index("ix_ml_model_records_status", "ml_model_records", ["status"])
 
-    # ── ml_predictions ────────────────────────────────────────────────────────
+    op.create_index(
+        "ix_ml_model_records_target",
+        "ml_model_records",
+        ["target"],
+        if_not_exists=True,
+    )
+    op.create_index(
+        "ix_ml_model_records_status",
+        "ml_model_records",
+        ["status"],
+        if_not_exists=True,
+    )
+
     op.create_table(
         "ml_predictions",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -55,28 +65,68 @@ def upgrade() -> None:
         sa.Column("actual_value", sa.Float(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("ix_ml_predictions_transformer_id", "ml_predictions", ["transformer_id"])
-    op.create_index("ix_ml_predictions_ref_date", "ml_predictions", ["ref_date"])
-    op.create_index(
-        "ix_ml_predictions_is_anomaly", "ml_predictions", ["is_anomaly"]
+        if_not_exists=True,
     )
 
-    # ── Ativar ml_adjusted em transformer_balances ────────────────────────────
-    # Coluna foi adicionada como nullable no Ato 5 — aqui adicionamos índice
+    op.create_index(
+        "ix_ml_predictions_transformer_id",
+        "ml_predictions",
+        ["transformer_id"],
+        if_not_exists=True,
+    )
+    op.create_index(
+        "ix_ml_predictions_ref_date",
+        "ml_predictions",
+        ["ref_date"],
+        if_not_exists=True,
+    )
+    op.create_index(
+        "ix_ml_predictions_is_anomaly",
+        "ml_predictions",
+        ["is_anomaly"],
+        if_not_exists=True,
+    )
+
     op.create_index(
         "ix_transformer_balances_ml_adjusted",
         "transformer_balances",
         ["ml_adjusted"],
+        if_not_exists=True,
     )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_transformer_balances_ml_adjusted", "transformer_balances")
-    op.drop_index("ix_ml_predictions_is_anomaly", "ml_predictions")
-    op.drop_index("ix_ml_predictions_ref_date", "ml_predictions")
-    op.drop_index("ix_ml_predictions_transformer_id", "ml_predictions")
-    op.drop_table("ml_predictions")
-    op.drop_index("ix_ml_model_records_status", "ml_model_records")
-    op.drop_index("ix_ml_model_records_target", "ml_model_records")
-    op.drop_table("ml_model_records")
+    op.drop_index(
+        "ix_transformer_balances_ml_adjusted",
+        table_name="transformer_balances",
+        if_exists=True,
+    )
+
+    op.drop_index(
+        "ix_ml_predictions_is_anomaly",
+        table_name="ml_predictions",
+        if_exists=True,
+    )
+    op.drop_index(
+        "ix_ml_predictions_ref_date",
+        table_name="ml_predictions",
+        if_exists=True,
+    )
+    op.drop_index(
+        "ix_ml_predictions_transformer_id",
+        table_name="ml_predictions",
+        if_exists=True,
+    )
+    op.drop_table("ml_predictions", if_exists=True)
+
+    op.drop_index(
+        "ix_ml_model_records_status",
+        table_name="ml_model_records",
+        if_exists=True,
+    )
+    op.drop_index(
+        "ix_ml_model_records_target",
+        table_name="ml_model_records",
+        if_exists=True,
+    )
+    op.drop_table("ml_model_records", if_exists=True)

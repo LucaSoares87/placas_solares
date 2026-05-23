@@ -1,12 +1,14 @@
 import asyncio
+import os
 from logging.config import fileConfig
 
+import backend.models  # noqa: F401
 from alembic import context
+from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from backend.core.config import get_settings
 from backend.core.database import Base
-import backend.models  # noqa: F401 — força registro de todos os models
 
 config = context.config
 settings = get_settings()
@@ -17,8 +19,17 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def get_migration_url() -> str:
+    return os.getenv("MIGRATION_DATABASE_URL") or str(settings.database_url)
+
+
+def is_async_url(url: str) -> bool:
+    return "+asyncpg" in url or "+aiopg" in url
+
+
 def run_migrations_offline() -> None:
-    url = str(settings.database_url)
+    url = get_migration_url()
+
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -26,29 +37,47 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
     )
+
     with context.begin_transaction():
         context.run_migrations()
 
 
-def do_run_migrations(connection):
+def do_run_migrations(connection) -> None:
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
     )
+
     with context.begin_transaction():
         context.run_migrations()
 
 
-async def run_async_migrations() -> None:
-    engine = create_async_engine(str(settings.database_url))
+async def run_async_migrations(url: str) -> None:
+    engine = create_async_engine(url)
+
     async with engine.begin() as conn:
         await conn.run_sync(do_run_migrations)
+
     await engine.dispose()
 
 
+def run_sync_migrations(url: str) -> None:
+    engine = create_engine(url)
+
+    with engine.begin() as connection:
+        do_run_migrations(connection)
+
+    engine.dispose()
+
+
 def run_migrations_online() -> None:
-    asyncio.run(run_async_migrations())
+    url = get_migration_url()
+
+    if is_async_url(url):
+        asyncio.run(run_async_migrations(url))
+    else:
+        run_sync_migrations(url)
 
 
 if context.is_offline_mode():
